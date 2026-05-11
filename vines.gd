@@ -9,7 +9,8 @@ extends Node3D
 @export var debug_sphere_radius := 0.05
 @export var debug_normal_length := 0.5
 @export var debug_normal_radius := 0.01
-@export_range(1, 10, 1) var vine_iterations := 3
+@export_range(1, 100, 1) var vine_iterations := 3
+@export_range(1, 20, 1) var vine_count := 3
 @export var vine_radius := 0.1
 @export_range(0.0, 180.0, 5.0) var surface_direction_variation_angle := 45.0
 
@@ -208,6 +209,8 @@ func _build_tubular_mesh(curve_points: Array, radius: float) -> Mesh:
 	var circle_segments := 16
 	var radius_vec := radius
 
+	# Store tangents for each curve point
+	var tangents: Array[Vector3] = []
 	for i in range(curve_points.size()):
 		var pt = curve_points[i]
 		var tangent: Vector3
@@ -218,6 +221,13 @@ func _build_tubular_mesh(curve_points: Array, radius: float) -> Mesh:
 			tangent = (curve_points[i] - curve_points[i - 1]).normalized()
 		else:
 			tangent = (curve_points[i + 1] - curve_points[i - 1]).normalized()
+
+		tangents.append(tangent)
+
+	# Build circle vertices and normals
+	for i in range(curve_points.size()):
+		var pt = curve_points[i]
+		var tangent = tangents[i]
 
 		var up := Vector3.UP
 		if abs(tangent.dot(up)) > 0.9:
@@ -232,11 +242,16 @@ func _build_tubular_mesh(curve_points: Array, radius: float) -> Mesh:
 			vertices.append(pt + offset)
 			normals.append(offset.normalized())
 
-	# Cap at start
-	var center_start := vertices[0]
-	vertices.append(center_start)
-	var center_start_idx := vertices.size() - 1
+	# Add cap centers with matching normals
+	var center_start_idx := vertices.size()
+	vertices.append(curve_points[0])
+	normals.append(tangents[0])
 
+	var center_end_idx := vertices.size()
+	vertices.append(curve_points[-1])
+	normals.append(tangents[-1])
+
+	# Cap at start
 	for j in range(circle_segments):
 		var j_next := (j + 1) % circle_segments
 		indices.append(center_start_idx)
@@ -261,9 +276,6 @@ func _build_tubular_mesh(curve_points: Array, radius: float) -> Mesh:
 
 	# Cap at end
 	var last_ring_start := (curve_points.size() - 1) * circle_segments
-	var center_end := vertices[last_ring_start]
-	vertices.append(center_end)
-	var center_end_idx := vertices.size() - 1
 
 	for j in range(circle_segments):
 		var j_next := (j + 1) % circle_segments
@@ -278,7 +290,20 @@ func _build_tubular_mesh(curve_points: Array, radius: float) -> Mesh:
 	arrays[Mesh.ARRAY_NORMAL] = normals
 	arrays[Mesh.ARRAY_INDEX] = indices
 
+	if DEBUG_PRINTS:
+		print("[vines] _build_tubular_mesh:")
+		print("[vines]   curve_points.size()=", curve_points.size())
+		print("[vines]   vertices.size()=", vertices.size())
+		print("[vines]   normals.size()=", normals.size())
+		print("[vines]   indices.size()=", indices.size())
+
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	
+	if DEBUG_PRINTS:
+		print("[vines] Mesh surface added. Surface count: ", mesh.get_surface_count())
+		var aabb := mesh.get_aabb()
+		print("[vines] Mesh AABB: ", aabb)
+	
 	return mesh
 
 func _random_in_plane_direction(normal: Vector3) -> Vector3:
@@ -359,7 +384,7 @@ func _spawn_debug_shapes(point: Vector3, normal: Vector3, iteration: int, size_s
 	cylinder.material.albedo_color = Color.RED
 
 	# Position cylinder so bottom is at point, top extends in normal direction
-	var cyl_center := point + normal * (debug_normal_length * size_scale * 0.5)
+	var cyl_center := point + normal * (debug_normal_length * size_scale * 0.9)
 	var up := normal
 	var right := up.cross(Vector3.FORWARD)
 	if right.length_squared() < 0.0001:
@@ -369,7 +394,7 @@ func _spawn_debug_shapes(point: Vector3, normal: Vector3, iteration: int, size_s
 	add_child(cylinder)
 	cylinder.global_transform = Transform3D(Basis(right, up, forward), cyl_center)
 
-func refresh_vines():
+func refresh_vines() -> void:
 	_clear_debug_shapes()
 	var origin := global_position
 	var point_result = get_closest_surface_point(origin)
@@ -378,15 +403,37 @@ func refresh_vines():
 	if point_result == null or normal_result == null:
 		return
 
+	var initial_point: Vector3 = point_result
+	var initial_normal: Vector3 = (normal_result as Vector3).normalized()
+
+	# Generate multiple vines from the same starting point in different directions
+	for vine_idx in range(vine_count):
+		var initial_dir: Vector3 = Vector3.ZERO
+		if vine_idx > 0:
+			# For vines after the first, use random directions on the surface plane
+			initial_dir = _random_in_plane_direction(initial_normal)
+		# First vine has zero initial direction (will be randomly chosen or continuous)
+
+		var vine_mesh = _generate_single_vine(initial_point, initial_normal, initial_dir)
+		if vine_mesh != null:
+			var mesh_instance := MeshInstance3D.new()
+			mesh_instance.mesh = vine_mesh
+			mesh_instance.material_override = StandardMaterial3D.new()
+			mesh_instance.material_override.albedo_color = Color.GREEN
+			add_child(mesh_instance)
+			if DEBUG_PRINTS:
+				print("[vines] vine ", vine_idx, " mesh added to scene")
+
+func _generate_single_vine(initial_point: Vector3, initial_normal: Vector3, initial_dir: Vector3) -> Mesh:
 	var points_and_normals: Array = []
-	var current_point: Vector3 = point_result
-	var current_normal: Vector3 = (normal_result as Vector3).normalized()
+	var current_point: Vector3 = initial_point
+	var current_normal: Vector3 = initial_normal.normalized()
 
 	# Store first point and normal
 	points_and_normals.append({"point": current_point, "normal": current_normal})
 
 	# Iterate to find next points with direction continuity
-	var preferred_surface_dir: Vector3 = Vector3.ZERO
+	var preferred_surface_dir: Vector3 = initial_dir
 	for iteration in range(1, vine_iterations):
 		# Compute preferred direction from last two points if available
 		if points_and_normals.size() >= 2:
@@ -407,7 +454,7 @@ func refresh_vines():
 		points_and_normals.append({"point": current_point, "normal": current_normal})
 
 	if DEBUG_PRINTS:
-		print("[vines] found ", points_and_normals.size(), " points")
+		print("[vines] vine generated with ", points_and_normals.size(), " points")
 
 	# Offset points outward by vine_radius along their normals
 	var offset_points: Array = []
@@ -418,18 +465,11 @@ func refresh_vines():
 	# Build Catmull-Rom curve
 	var curve_points := _build_catmull_rom_curve(offset_points)
 
-	# Build tubular mesh
-	var vine_mesh := _build_tubular_mesh(curve_points, vine_radius)
-	if vine_mesh != null:
-		var mesh_instance := MeshInstance3D.new()
-		mesh_instance.mesh = vine_mesh
-		mesh_instance.material_override = StandardMaterial3D.new()
-		mesh_instance.material_override.albedo_color = Color.GREEN
-		add_child(mesh_instance)
+	# Convert curve points to local space (relative to node position)
+	var local_curve_points: Array = []
+	for pt in curve_points:
+		local_curve_points.append(pt - global_position)
 
-	# Spawn debug shapes for each point with decreasing size
-	for i in range(points_and_normals.size()):
-		var size_scale := pow(0.5, float(i))
-		var entry = points_and_normals[i]
-		_spawn_debug_shapes(entry["point"], entry["normal"], i, size_scale)
+	# Build and return tubular mesh
+	return _build_tubular_mesh(local_curve_points, vine_radius)
 	

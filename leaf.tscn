@@ -1,0 +1,10 @@
+[gd_scene format=3 uid="uid://brylinoxmjbaq"]
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_qgvdh"]
+size = Vector2(0.1, 0.1)
+
+[node name="Leaf" type="Node3D" unique_id=784899219]
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=1624549467]
+transform = Transform3D(0.70710677, -3.090862e-08, -0.70710677, -0.70710677, -3.090862e-08, -0.70710677, 0, 1, -4.371139e-08, 0, 0.070408285, 0)
+mesh = SubResource("PlaneMesh_qgvdh")

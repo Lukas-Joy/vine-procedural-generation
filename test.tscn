@@ -120,7 +120,9 @@ transform = Transform3D(1, 0, 0, 1.7763568e-15, 0.9999999, 0, 0, 0, 0.9999999, 0
 shape = SubResource("ConcavePolygonShape3D_00tp4")
 
 [node name="VineGenerator" type="Node3D" parent="." unique_id=1945434608]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.02860862, 2.1180432, -0.39555943)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.5286086, 2.1180432, -0.89555943)
 script = ExtResource("1")
-vine_iterations = 7
-vine_radius = 0.05
+vine_iterations = 10
+vine_count = 10
+vine_radius = 0.01
+surface_direction_variation_angle = 100.0
