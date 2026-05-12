@@ -13,6 +13,10 @@ extends Node3D
 @export_range(1, 20, 1) var vine_count := 3
 @export var vine_radius := 0.1
 @export_range(0.0, 180.0, 5.0) var surface_direction_variation_angle := 45.0
+@export var leaf_scene: PackedScene
+@export_range(0.1, 2.0, 0.1) var leaf_scale_min := 0.8
+@export_range(0.1, 2.0, 0.1) var leaf_scale_max := 1.2
+@export_range(0.0, 1.0, 0.05) var leaf_density := 0.5
 
 const QUERY_COLLISION_MASK := 1
 const COLLIDE_WITH_BODIES := true
@@ -306,6 +310,137 @@ func _build_tubular_mesh(curve_points: Array, radius: float) -> Mesh:
 	
 	return mesh
 
+
+func _extract_mesh_from_scene(scene: PackedScene) -> Mesh:
+	if scene == null:
+		return null
+	var inst := scene.instantiate()
+	# Search for first MeshInstance3D
+	var mesh_res: Mesh = null
+	if typeof(inst) == TYPE_OBJECT and inst is MeshInstance3D:
+		mesh_res = inst.mesh
+	else:
+		var stack := [inst]
+		while stack.size() > 0:
+			var node = stack.pop_back()
+			for child in node.get_children():
+				if child is MeshInstance3D and mesh_res == null:
+					mesh_res = child.mesh
+				elif child.get_child_count() > 0:
+					stack.append(child)
+	inst.queue_free()
+	return mesh_res
+
+
+func _scatter_scene_multimesh(scene: PackedScene, placements: Array, opt_min_scale: float = -1.0, opt_max_scale: float = -1.0) -> void:
+	# Extract mesh from the provided scene; requires scene contains a MeshInstance3D
+	var mesh_res := _extract_mesh_from_scene(scene)
+	if mesh_res == null:
+		if DEBUG_PRINTS:
+			print("[vines] _scatter_scene_multimesh: no mesh found in scene")
+		return
+	if placements.is_empty():
+		return
+
+	var mm_instance := MultiMeshInstance3D.new()
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.mesh = mesh_res
+	mm.instance_count = placements.size()
+	mm_instance.multimesh = mm
+
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
+
+	for i in range(placements.size()):
+		var placement = placements[i]
+		var world_pos: Vector3 = placement["point"]
+		var outward: Vector3 = placement["outward"].normalized()
+		var tangent: Vector3 = placement["tangent"].normalized()
+
+		# Compute local position relative to this node transform
+		var local_pos := to_local(world_pos)
+
+		# Build basis where local +Y points outward from the tube surface.
+		var up := outward
+		var right := tangent.cross(up)
+		if right.length_squared() < 1e-6:
+			right = up.cross(Vector3.UP)
+			if right.length_squared() < 1e-6:
+				right = up.cross(Vector3.RIGHT)
+		right = right.normalized()
+		var forward := right.cross(up).normalized()
+		var basis := Basis(right, up, forward)
+
+		# Random twist around local +Y to reduce repetition while preserving attachment direction.
+		var ang := rng.randf_range(0.0, TAU)
+		var rot := Quaternion(up, ang)
+		basis = Basis(rot) * basis
+
+		# Random scale
+		var smin := opt_min_scale if opt_min_scale > 0.0 else leaf_scale_min
+		var smax := opt_max_scale if opt_max_scale > 0.0 else leaf_scale_max
+		var scale := rng.randf_range(smin, smax)
+		basis = basis.scaled(Vector3(scale, scale, scale))
+
+		var tr := Transform3D(basis, local_pos)
+		mm.set_instance_transform(i, tr)
+
+	add_child(mm_instance)
+
+
+func _build_tube_surface_placements(curve_points: Array, radius: float, density: float) -> Array:
+	var placements: Array = []
+	if curve_points.size() < 2:
+		return placements
+	if density <= 0.0:
+		return placements
+
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
+
+	# Density is interpreted as a normalized fraction of curve samples.
+	var sample_count := int(round(float(curve_points.size()) * clamp(density, 0.0, 1.0)))
+	sample_count = max(1, sample_count)
+
+	for i in range(sample_count):
+		var t_norm := (float(i) + rng.randf() * 0.35) / float(sample_count)
+		t_norm = clamp(t_norm, 0.0, 1.0)
+		var seg_f := t_norm * float(curve_points.size() - 1)
+		var idx := int(floor(seg_f))
+		var idx_next = min(idx + 1, curve_points.size() - 1)
+		var alpha := seg_f - float(idx)
+
+		var p0: Vector3 = curve_points[idx]
+		var p1: Vector3 = curve_points[idx_next]
+		var center: Vector3 = p0.lerp(p1, alpha)
+
+		var tangent: Vector3
+		if idx == 0:
+			tangent = (curve_points[1] - curve_points[0]).normalized()
+		elif idx >= curve_points.size() - 2:
+			tangent = (curve_points[curve_points.size() - 1] - curve_points[curve_points.size() - 2]).normalized()
+		else:
+			tangent = (curve_points[idx + 1] - curve_points[idx - 1]).normalized()
+
+		# Build a stable ring frame around the tangent and pick a random angle on the tube surface.
+		var ref_up := Vector3.UP
+		if abs(tangent.dot(ref_up)) > 0.9:
+			ref_up = Vector3.RIGHT
+		var right := tangent.cross(ref_up).normalized()
+		var forward := tangent.cross(right).normalized()
+		var ang := rng.randf_range(0.0, TAU)
+		var outward := (right * cos(ang) + forward * sin(ang)).normalized()
+		var surface_point := center + outward * radius
+
+		placements.append({
+			"point": surface_point,
+			"outward": outward,
+			"tangent": tangent
+		})
+
+	return placements
+
 func _random_in_plane_direction(normal: Vector3) -> Vector3:
 	var rng := RandomNumberGenerator.new()
 	rng.randomize()
@@ -464,6 +599,11 @@ func _generate_single_vine(initial_point: Vector3, initial_normal: Vector3, init
 
 	# Build Catmull-Rom curve
 	var curve_points := _build_catmull_rom_curve(offset_points)
+
+	# Scatter leaves along the actual tube surface so distribution is even and orientation is outward.
+	if leaf_scene != null:
+		var leaf_placements := _build_tube_surface_placements(curve_points, vine_radius, leaf_density)
+		_scatter_scene_multimesh(leaf_scene, leaf_placements)
 
 	# Convert curve points to local space (relative to node position)
 	var local_curve_points: Array = []

@@ -1,6 +1,7 @@
 [gd_scene format=4 uid="uid://w87tfvfrnhm6"]
 
 [ext_resource type="Script" uid="uid://crh3jffsv2yir" path="res://vines.gd" id="1"]
+[ext_resource type="PackedScene" uid="uid://brylinoxmjbaq" path="res://leaf.tscn" id="2_8uh7m"]
 
 [sub_resource type="ArrayMesh" id="ArrayMesh_37kl0"]
 _surfaces = [{
@@ -120,9 +121,21 @@ transform = Transform3D(1, 0, 0, 1.7763568e-15, 0.9999999, 0, 0, 0, 0.9999999, 0
 shape = SubResource("ConcavePolygonShape3D_00tp4")
 
 [node name="VineGenerator" type="Node3D" parent="." unique_id=1945434608]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.5286086, 2.1180432, -0.89555943)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.4713914, 2.1180432, 2.1044407)
 script = ExtResource("1")
 vine_iterations = 10
 vine_count = 10
 vine_radius = 0.01
 surface_direction_variation_angle = 100.0
+leaf_scene = ExtResource("2_8uh7m")
+leaf_density = 1.0
+
+[node name="VineGenerator2" type="Node3D" parent="." unique_id=1973063508]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.4828637, 0.71104574, -1.4690642)
+script = ExtResource("1")
+vine_iterations = 10
+vine_count = 10
+vine_radius = 0.01
+surface_direction_variation_angle = 100.0
+leaf_scene = ExtResource("2_8uh7m")
+leaf_density = 1.0
