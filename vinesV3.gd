@@ -3,20 +3,23 @@ extends Node3D
 
 @export_tool_button("Redraw", "Node3D") var redraw_tool_button = refresh_vines
 
-@export var query_max_distance := 25.0
-@export_range(0, 4, 1) var refinement_passes := 2
-@export_range(6, 64, 1) var refinement_rays_per_pass := 18
-@export var debug_sphere_radius := 0.05
-@export var debug_normal_length := 0.5
-@export var debug_normal_radius := 0.01
-@export_range(1, 100, 1) var vine_iterations := 3
-@export_range(1, 20, 1) var vine_count := 3
-@export var vine_radius := 0.1
-@export_range(0.0, 180.0, 5.0) var surface_direction_variation_angle := 45.0
-@export var leaf_scene: PackedScene
-@export_range(0.1, 2.0, 0.1) var leaf_scale_min := 0.8
-@export_range(0.1, 2.0, 0.1) var leaf_scale_max := 1.2
-@export_range(0.0, 1.0, 0.05) var leaf_density := 0.5
+@export_category("Origin Calculation")
+@export var origin_raycast_distance := 2.0 ##Radius in Meters of zone checked to find the closest surface point for the origin.
+@export_range(0, 4, 1) var refinement_passes := 2 ##Number of times does extra raycast passes to get more accurate closest surface point.
+@export_range(6, 64, 1) var refinement_rays_per_pass := 18 ##Number of raycasts pre refinement pass.
+
+@export_category("Vine Settings")
+@export var step_length := 0.5 ##Length of raycast used to find next point in branch.
+@export_range(1, 10, 1) var vine_length := 10 ##Number of node in single vine branch.
+@export var vine_radius := 0.01 ##Vine Radius in meters.
+@export_range(1, 20, 1) var vine_count := 1 ##Number of branches starting from the origin point.
+@export_range(0.0, 180.0, 5.0) var surface_direction_variation_angle := 45.0 ##
+
+@export_category("Leaf Settings")
+@export var leaf_scene: PackedScene ##
+@export_range(0.1, 2.0, 0.1) var leaf_scale_min := 0.8 ##
+@export_range(0.1, 2.0, 0.1) var leaf_scale_max := 1.2 ##
+@export_range(0.0, 1.0, 0.05) var leaf_density := 0.5 ##
 
 const QUERY_COLLISION_MASK := 1
 const COLLIDE_WITH_BODIES := true
@@ -69,13 +72,13 @@ func _find_closest_surface_hit(global_point: Vector3) -> Dictionary:
 	if DEBUG_PRINTS:
 		print("[vines] _find_closest_surface_hit()")
 		print("[vines] query_origin=", query_origin)
-		print("[vines] max_distance=", query_max_distance)
+		print("[vines] max_distance=", origin_raycast_distance)
 		print("[vines] collision_mask=", QUERY_COLLISION_MASK)
 
 	for direction in directions:
 		var params := PhysicsRayQueryParameters3D.create(
 			query_origin,
-			query_origin + direction * query_max_distance,
+			query_origin + direction * origin_raycast_distance,
 			QUERY_COLLISION_MASK
 		)
 		params.collide_with_bodies = COLLIDE_WITH_BODIES
@@ -111,7 +114,7 @@ func _find_closest_surface_hit(global_point: Vector3) -> Dictionary:
 				var sample_dir: Vector3 = (best["direction"] as Vector3).slerp(unit_dir, blend).normalized()
 				var sample_params := PhysicsRayQueryParameters3D.create(
 					query_origin,
-					query_origin + sample_dir * query_max_distance,
+					query_origin + sample_dir * origin_raycast_distance,
 					QUERY_COLLISION_MASK
 				)
 				sample_params.collide_with_bodies = COLLIDE_WITH_BODIES
@@ -201,6 +204,128 @@ func _build_catmull_rom_curve(points: Array) -> Array:
 		curve_points.append(points[-1])
 
 	return curve_points
+
+func _random_in_plane_direction(normal: Vector3) -> Vector3:
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
+	var angle := rng.randf_range(0.0, PI * 2.0)
+	var tangent := normal.cross(Vector3.UP)
+	if tangent.length_squared() < 1e-6:
+		tangent = normal.cross(Vector3.RIGHT)
+	tangent = tangent.normalized()
+	return tangent.rotated(normal, angle).normalized()
+
+func _compute_next_point_internal(surface_point: Vector3, surface_normal: Vector3, preferred_surface_dir: Vector3 = Vector3.ZERO) -> Variant:
+	var x := step_length
+	var half_x := x * 0.5
+	var debug_segments: Array = []
+
+	# 1) Raycast up from surface point in normal direction length x/2
+	var start1 := surface_point
+	var end1 := surface_point + surface_normal * half_x
+	var hit = _raycast_for_next(start1, surface_normal, half_x)
+	var seg_end1 := end1
+	if not hit.is_empty():
+		seg_end1 = hit["position"]
+	debug_segments.append({"start": start1, "end": seg_end1})
+	if not hit.is_empty():
+		return {"point": hit["position"], "normal": hit["normal"], "debug_segments": debug_segments}
+
+	# base origin is end of the first ray
+	var base := end1
+
+	# 2) random parallel direction in surface plane, ray length x
+	var parallel_dir: Vector3
+	if preferred_surface_dir.length_squared() > 0.0001:
+		# Bias toward preferred direction with variation
+		var rng := RandomNumberGenerator.new()
+		rng.randomize()
+		var variation_rad := deg_to_rad(surface_direction_variation_angle)
+		var angle_offset := rng.randf_range(-variation_rad, variation_rad)
+		parallel_dir = preferred_surface_dir.rotated(surface_normal, angle_offset).normalized()
+	else:
+		parallel_dir = _random_in_plane_direction(surface_normal)
+
+	var start2 := base
+	var end2 := base + parallel_dir * x
+	hit = _raycast_for_next(start2, parallel_dir, x)
+	var seg_end2 := end2
+	if not hit.is_empty():
+		seg_end2 = hit["position"]
+	debug_segments.append({"start": start2, "end": seg_end2})
+	if not hit.is_empty():
+		return {"point": hit["position"], "normal": hit["normal"], "debug_segments": debug_segments}
+
+	# 3) raycast length x from end in negative normal direction
+	var base2 := end2
+	var start3 := base2
+	var end3 := base2 + (-surface_normal) * x
+	hit = _raycast_for_next(start3, -surface_normal, x)
+	var seg_end3 := end3
+	if not hit.is_empty():
+		seg_end3 = hit["position"]
+	debug_segments.append({"start": start3, "end": seg_end3})
+	if not hit.is_empty():
+		return {"point": hit["position"], "normal": hit["normal"], "debug_segments": debug_segments}
+
+	# 4) raycast length x from end in negative parallel direction
+	var base3 := end3
+	var start4 := base3
+	var end4 := base3 + (-parallel_dir) * x
+	hit = _raycast_for_next(start4, -parallel_dir, x)
+	var seg_end4 := end4
+	if not hit.is_empty():
+		seg_end4 = hit["position"]
+	debug_segments.append({"start": start4, "end": seg_end4})
+	if not hit.is_empty():
+		return {"point": hit["position"], "normal": hit["normal"], "debug_segments": debug_segments}
+
+	# 5) final raycast from end in normal direction (should hit)
+	var base4 := end4
+	var start5 := base4
+	var end5 := base4 + surface_normal * x
+	hit = _raycast_for_next(start5, surface_normal, x)
+	var seg_end5 := end5
+	if not hit.is_empty():
+		seg_end5 = hit["position"]
+	debug_segments.append({"start": start5, "end": seg_end5})
+	if not hit.is_empty():
+		return {"point": hit["position"], "normal": hit["normal"], "debug_segments": debug_segments}
+
+	# error, return null
+	return null
+
+func refresh_vines() -> void:
+	_clear_debug_shapes()
+	var origin := global_position
+	var point_result = get_closest_surface_point(origin)
+	var normal_result = get_closest_surface_normal(origin)
+
+	if point_result == null or normal_result == null:
+		return
+
+	var initial_point: Vector3 = point_result
+	var initial_normal: Vector3 = (normal_result as Vector3).normalized()
+
+	# Generate multiple vines from the same starting point in different directions
+	for vine_idx in range(vine_count):
+		var initial_dir: Vector3 = Vector3.ZERO
+		if vine_idx > 0:
+			# For vines after the first, use random directions on the surface plane
+			initial_dir = _random_in_plane_direction(initial_normal)
+		# First vine has zero initial direction (will be randomly chosen or continuous)
+
+		var vine_mesh = _generate_single_vine(initial_point, initial_normal, initial_dir)
+		if vine_mesh != null:
+			var mesh_instance := MeshInstance3D.new()
+			mesh_instance.mesh = vine_mesh
+			mesh_instance.material_override = StandardMaterial3D.new()
+			mesh_instance.material_override.albedo_color = Color.GREEN
+			add_child(mesh_instance)
+			if DEBUG_PRINTS:
+				print("[vines] vine ", vine_idx, " mesh added to scene")
+	
+
 
 func _build_tubular_mesh(curve_points: Array, radius: float) -> Mesh:
 	if curve_points.size() < 2:
@@ -441,135 +566,18 @@ func _build_tube_surface_placements(curve_points: Array, radius: float, density:
 
 	return placements
 
-func _random_in_plane_direction(normal: Vector3) -> Vector3:
-	var rng := RandomNumberGenerator.new()
-	rng.randomize()
-	var angle := rng.randf_range(0.0, PI * 2.0)
-	var tangent := normal.cross(Vector3.UP)
-	if tangent.length_squared() < 1e-6:
-		tangent = normal.cross(Vector3.RIGHT)
-	tangent = tangent.normalized()
-	return tangent.rotated(normal, angle).normalized()
-
-func _compute_next_point_internal(surface_point: Vector3, surface_normal: Vector3, preferred_surface_dir: Vector3 = Vector3.ZERO) -> Variant:
-	var x := debug_normal_length
-	var half_x := x * 0.5
-	# 1) Raycast up from surface point in normal direction length x/2
-	var hit = _raycast_for_next(surface_point, surface_normal, half_x)
-	if not hit.is_empty():
-		return {"point": hit["position"], "normal": hit["normal"]}
-
-	# base origin is end of the first ray
-	var base := surface_point + surface_normal * half_x
-
-	# 2) random parallel direction in surface plane, ray length x
-	var parallel_dir: Vector3
-	if preferred_surface_dir.length_squared() > 0.0001:
-		# Bias toward preferred direction with variation
-		var rng := RandomNumberGenerator.new()
-		rng.randomize()
-		var variation_rad := deg_to_rad(surface_direction_variation_angle)
-		var angle_offset := rng.randf_range(-variation_rad, variation_rad)
-		parallel_dir = preferred_surface_dir.rotated(surface_normal, angle_offset).normalized()
-	else:
-		parallel_dir = _random_in_plane_direction(surface_normal)
-
-	hit = _raycast_for_next(base, parallel_dir, x)
-	if not hit.is_empty():
-		return {"point": hit["position"], "normal": hit["normal"]}
-
-	# 3) raycast length x from end in negative normal direction
-	var base2 := base + parallel_dir * x
-	hit = _raycast_for_next(base2, -surface_normal, x)
-	if not hit.is_empty():
-		return {"point": hit["position"], "normal": hit["normal"]}
-
-	# 4) raycast length x from end in negative parallel direction
-	var base3 := base2 + (-surface_normal) * x
-	hit = _raycast_for_next(base3, -parallel_dir, x)
-	if not hit.is_empty():
-		return {"point": hit["position"], "normal": hit["normal"]}
-
-	# 5) final raycast from end in normal direction (should hit)
-	var base4 := base3 + (-parallel_dir) * x
-	hit = _raycast_for_next(base4, surface_normal, x)
-	if not hit.is_empty():
-		return {"point": hit["position"], "normal": hit["normal"]}
-
-	# error, return null
-	return null
-
-func _spawn_debug_shapes(point: Vector3, normal: Vector3, iteration: int, size_scale: float) -> void:
-	var sphere := CSGSphere3D.new()
-	sphere.name = "DebugPointSphere_%d" % iteration
-	sphere.radius = debug_sphere_radius * size_scale
-	sphere.use_collision = false
-	sphere.material = StandardMaterial3D.new()
-	sphere.material.albedo_color = Color.RED
-	add_child(sphere)
-	sphere.global_transform = Transform3D(Basis(), point)
-
-	# Cylinder with one end at point, extending in normal direction
-	var cylinder := CSGCylinder3D.new()
-	cylinder.name = "DebugNormalCylinder_%d" % iteration
-	cylinder.radius = debug_normal_radius * size_scale
-	cylinder.height = debug_normal_length * size_scale
-	cylinder.use_collision = false
-	cylinder.material = StandardMaterial3D.new()
-	cylinder.material.albedo_color = Color.RED
-
-	# Position cylinder so bottom is at point, top extends in normal direction
-	var cyl_center := point + normal * (debug_normal_length * size_scale * 0.9)
-	var up := normal
-	var right := up.cross(Vector3.FORWARD)
-	if right.length_squared() < 0.0001:
-		right = up.cross(Vector3.RIGHT)
-	right = right.normalized()
-	var forward := right.cross(up).normalized()
-	add_child(cylinder)
-	cylinder.global_transform = Transform3D(Basis(right, up, forward), cyl_center)
-
-func refresh_vines() -> void:
-	_clear_debug_shapes()
-	var origin := global_position
-	var point_result = get_closest_surface_point(origin)
-	var normal_result = get_closest_surface_normal(origin)
-
-	if point_result == null or normal_result == null:
-		return
-
-	var initial_point: Vector3 = point_result
-	var initial_normal: Vector3 = (normal_result as Vector3).normalized()
-
-	# Generate multiple vines from the same starting point in different directions
-	for vine_idx in range(vine_count):
-		var initial_dir: Vector3 = Vector3.ZERO
-		if vine_idx > 0:
-			# For vines after the first, use random directions on the surface plane
-			initial_dir = _random_in_plane_direction(initial_normal)
-		# First vine has zero initial direction (will be randomly chosen or continuous)
-
-		var vine_mesh = _generate_single_vine(initial_point, initial_normal, initial_dir)
-		if vine_mesh != null:
-			var mesh_instance := MeshInstance3D.new()
-			mesh_instance.mesh = vine_mesh
-			mesh_instance.material_override = StandardMaterial3D.new()
-			mesh_instance.material_override.albedo_color = Color.GREEN
-			add_child(mesh_instance)
-			if DEBUG_PRINTS:
-				print("[vines] vine ", vine_idx, " mesh added to scene")
 
 func _generate_single_vine(initial_point: Vector3, initial_normal: Vector3, initial_dir: Vector3) -> Mesh:
 	var points_and_normals: Array = []
 	var current_point: Vector3 = initial_point
-	var current_normal: Vector3 = initial_normal.normalized()
+	var current_normal: Vector3 = (initial_normal as Vector3).normalized()
 
 	# Store first point and normal
 	points_and_normals.append({"point": current_point, "normal": current_normal})
 
 	# Iterate to find next points with direction continuity
-	var preferred_surface_dir: Vector3 = initial_dir
-	for iteration in range(1, vine_iterations):
+	var preferred_surface_dir: Vector3 = Vector3.ZERO
+	for iteration in range(1, vine_length):
 		# Compute preferred direction from last two points if available
 		if points_and_normals.size() >= 2:
 			var p_prev: Vector3 = points_and_normals[-1]["point"]
@@ -584,18 +592,67 @@ func _generate_single_vine(initial_point: Vector3, initial_normal: Vector3, init
 				print("[vines] iteration ", iteration, " computation failed")
 			break
 
+		# Compare normals to previous; if different, draw spheres along all ray segments that were tested for this point
+		var prev_normal := current_normal
+		var new_normal := (next_result["normal"] as Vector3).normalized()
+		if prev_normal != null and next_result.has("debug_segments"):
+			var d := prev_normal.dot(new_normal)
+			if d < 0.9999:
+				# Refinement: sample N points along the concatenated debug ray polyline,
+				# raycast from each sample toward the corresponding point along the cube path
+				var refinement_count := 10
+				# build segment lengths
+				var segs = next_result["debug_segments"]
+				var seg_lengths := []
+				var total_len := 0.0
+				for s in segs:
+					var l := (s["start"] as Vector3).distance_to(s["end"])
+					seg_lengths.append(l)
+					total_len += l
+				if total_len > 0.0:
+					for k in range(1, refinement_count + 1):
+						var frac := float(k) / float(refinement_count + 1)
+						# find position along polyline at frac
+						var dist_along := total_len * frac
+						var accum := 0.0
+						var source_pos = segs[-1]["end"]
+						for idx in range(segs.size()):
+							if accum + seg_lengths[idx] >= dist_along:
+								var local_t = (dist_along - accum) / seg_lengths[idx]
+								source_pos = (segs[idx]["start"] as Vector3).lerp(segs[idx]["end"] as Vector3, local_t)
+								break
+							accum += seg_lengths[idx]
+						# corresponding target along straight line between prev and new point
+						var target_pos := (current_point as Vector3).lerp(next_result["point"] as Vector3, frac)
+						var dir_vec = (target_pos - source_pos)
+						if dir_vec.length_squared() < 1e-8:
+							continue
+						var ray_hit := _raycast_for_next(source_pos, dir_vec, dir_vec.length() + 0.01)
+						if not ray_hit.is_empty():
+							points_and_normals.append({"point": ray_hit["position"], "normal": ray_hit["normal"]})
+
 		current_point = next_result["point"]
-		current_normal = (next_result["normal"] as Vector3).normalized()
+		current_normal = new_normal
 		points_and_normals.append({"point": current_point, "normal": current_normal})
 
 	if DEBUG_PRINTS:
-		print("[vines] vine generated with ", points_and_normals.size(), " points")
+		print("[vines] found ", points_and_normals.size(), " points")
 
 	# Offset points outward by vine_radius along their normals
 	var offset_points: Array = []
 	for entry in points_and_normals:
 		var offset_pt: Vector3 = entry["point"] + entry["normal"] * vine_radius
 		offset_points.append(offset_pt)
+
+	# Spawn debug shapes for each point with decreasing size
+	for i in range(points_and_normals.size()):
+		var size_scale := pow(0.9, float(i))
+		var entry = points_and_normals[i]
+		var prev_normal = null
+		var prev_point = null
+		if i > 0:
+			prev_normal = points_and_normals[i - 1]["normal"]
+			prev_point = points_and_normals[i - 1]["point"]
 
 	# Build Catmull-Rom curve
 	var curve_points := _build_catmull_rom_curve(offset_points)
