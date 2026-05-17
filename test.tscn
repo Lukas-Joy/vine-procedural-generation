@@ -2,6 +2,7 @@
 
 [ext_resource type="Script" uid="uid://crh3jffsv2yir" path="res://vines.gd" id="1"]
 [ext_resource type="PackedScene" uid="uid://brylinoxmjbaq" path="res://leaf.tscn" id="2_8uh7m"]
+[ext_resource type="Script" uid="uid://cj774uu7tad1c" path="res://vinesV2.gd" id="3_6uqi0"]
 
 [sub_resource type="ArrayMesh" id="ArrayMesh_37kl0"]
 _surfaces = [{
@@ -130,12 +131,7 @@ surface_direction_variation_angle = 100.0
 leaf_scene = ExtResource("2_8uh7m")
 leaf_density = 1.0
 
-[node name="VineGenerator2" type="Node3D" parent="." unique_id=1973063508]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.4828637, 0.71104574, -1.4690642)
-script = ExtResource("1")
+[node name="VineGeneratorV2" type="Node3D" parent="." unique_id=1973063508]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.10932028, 2.3806486, -0.568701)
+script = ExtResource("3_6uqi0")
 vine_iterations = 10
-vine_count = 10
-vine_radius = 0.01
-surface_direction_variation_angle = 100.0
-leaf_scene = ExtResource("2_8uh7m")
-leaf_density = 1.0
