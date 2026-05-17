@@ -1,7 +1,7 @@
 @tool
 extends Node3D
 
-@export_tool_button("Generate Vines") var redraw_tool_button: Callable = Callable(self, "refresh_vines")
+@export_tool_button("Redraw", "Node3D") var redraw_tool_button = refresh_vines
 
 @export var query_max_distance := 25.0
 @export_range(0, 4, 1) var refinement_passes := 2
@@ -9,27 +9,14 @@ extends Node3D
 @export var debug_sphere_radius := 0.05
 @export var debug_normal_length := 0.5
 @export var debug_normal_radius := 0.01
-@export_range(1, 100, 1) var vine_iterations := 3
+@export_range(1, 10, 1) var vine_iterations := 3
 @export var vine_radius := 0.1
 @export_range(0.0, 180.0, 5.0) var surface_direction_variation_angle := 45.0
-
-@export_range(1, 200, 1) var vine_length_min := 3
-@export_range(1, 200, 1) var vine_length_max := 30
-
-@export var refinement_ray_overreach := 1.5
-@export var branch_chance := 0.2
-@export var max_debug_nodes := 1000
-@export var max_points_total := 1000
-@export var per_tick_spawn_limit := 200
-@export var enable_yielding := true
 
 const QUERY_COLLISION_MASK := 1
 const COLLIDE_WITH_BODIES := true
 const COLLIDE_WITH_AREAS := false
 const DEBUG_PRINTS := true
-
-var _debug_spawn_count := 0
-var _spawn_this_tick := 0
 
 func _find_closest_surface_hit(global_point: Vector3) -> Dictionary:
 	var query_origin := global_point
@@ -233,19 +220,11 @@ func _spawn_toruses_along_segment(start: Vector3, end: Vector3, count: int = 8, 
 		var pos := start.lerp(end, t)
 		var sph := CSGSphere3D.new()
 		sph.name = "DebugRaySphere_%d" % i
-		sph.radius = max(0.01, length * 0.02 * size_scale)
-		# enforce global spawn limit
-		if _debug_spawn_count >= max_debug_nodes:
-			break
+		sph.radius = max(0.01, length * 0.02) * size_scale
 		sph.use_collision = false
 		sph.material = StandardMaterial3D.new()
 		sph.material.albedo_color = color
 		add_child(sph)
-		_debug_spawn_count += 1
-		_spawn_this_tick += 1
-		if enable_yielding and _spawn_this_tick >= per_tick_spawn_limit:
-			_spawn_this_tick = 0
-			await get_tree().process_frame
 		sph.global_transform = Transform3D(Basis(), pos)
 
 func _compute_next_point_internal(surface_point: Vector3, surface_normal: Vector3, preferred_surface_dir: Vector3 = Vector3.ZERO) -> Variant:
@@ -345,28 +324,18 @@ func _spawn_debug_shapes(point: Vector3, normal: Vector3, iteration: int, size_s
 
 	var sphere := CSGSphere3D.new()
 	sphere.name = "DebugPointSphere_%d" % iteration
-	sphere.radius = max(0.005, debug_sphere_radius * size_scale)
+	sphere.radius = debug_sphere_radius * size_scale
 	sphere.use_collision = false
 	sphere.material = StandardMaterial3D.new()
 	sphere.material.albedo_color = color
-	# enforce global spawn limit
-	if _debug_spawn_count < max_debug_nodes:
-		add_child(sphere)
-		_debug_spawn_count += 1
-		_spawn_this_tick += 1
-		if enable_yielding and _spawn_this_tick >= per_tick_spawn_limit:
-			_spawn_this_tick = 0
-			await get_tree().process_frame
-	else:
-		if DEBUG_PRINTS:
-			print("[vines] reached max_debug_nodes; skipping further debug geometry")
+	add_child(sphere)
 	sphere.global_transform = Transform3D(Basis(), point)
 
 	# Cylinder with one end at point, extending in normal direction
 	var cylinder := CSGCylinder3D.new()
 	cylinder.name = "DebugNormalCylinder_%d" % iteration
-	cylinder.radius = max(0.005, debug_normal_radius * size_scale)
-	cylinder.height = max(0.01, debug_normal_length * size_scale)
+	cylinder.radius = debug_normal_radius * size_scale
+	cylinder.height = debug_normal_length * size_scale
 	cylinder.use_collision = false
 	cylinder.material = StandardMaterial3D.new()
 	cylinder.material.albedo_color = color
@@ -380,22 +349,13 @@ func _spawn_debug_shapes(point: Vector3, normal: Vector3, iteration: int, size_s
 	right = right.normalized()
 	var forward := right.cross(up).normalized()
 	var debug_segments: Array = []
-	if _debug_spawn_count < max_debug_nodes:
-		add_child(cylinder)
-		_debug_spawn_count += 1
-		_spawn_this_tick += 1
-		if enable_yielding and _spawn_this_tick >= per_tick_spawn_limit:
-			_spawn_this_tick = 0
-			await get_tree().process_frame
-	else:
-		if DEBUG_PRINTS:
-			print("[vines] reached max_debug_nodes; skipping normal cylinder")
+	add_child(cylinder)
 	cylinder.global_transform = Transform3D(Basis(right, up, forward), cyl_center)
 
 	# If normals differ (we colored green) and we have a previous point, spawn a line of small cubes
 	if prev_point != null and color == Color.GREEN:
 		var cube_count := 10
-		var cube_size = max(0.01, debug_sphere_radius * 0.5 * size_scale)
+		var cube_size := debug_sphere_radius * 0.5 * size_scale
 		for j in range(1, cube_count + 1):
 			var t := float(j) / float(cube_count + 1)
 			var pos := (prev_point as Vector3).lerp(point, t)
@@ -406,22 +366,11 @@ func _spawn_debug_shapes(point: Vector3, normal: Vector3, iteration: int, size_s
 			mi.mesh = box_mesh
 			mi.material_override = StandardMaterial3D.new()
 			mi.material_override.albedo_color = color
-			if _debug_spawn_count < max_debug_nodes:
-				add_child(mi)
-				_debug_spawn_count += 1
-				_spawn_this_tick += 1
-				if enable_yielding and _spawn_this_tick >= per_tick_spawn_limit:
-					_spawn_this_tick = 0
-					await get_tree().process_frame
-			else:
-				if DEBUG_PRINTS:
-					print("[vines] reached max_debug_nodes; skipping debug cube")
+			add_child(mi)
 			mi.global_transform = Transform3D(Basis(), pos)
 
 func refresh_vines():
 	_clear_debug_shapes()
-	_debug_spawn_count = 0
-	_spawn_this_tick = 0
 	var origin := global_position
 	var point_result = get_closest_surface_point(origin)
 	var normal_result = get_closest_surface_normal(origin)
@@ -436,43 +385,37 @@ func refresh_vines():
 	# Store first point and normal
 	points_and_normals.append({"point": current_point, "normal": current_normal})
 
-	
-	# Process vine growth breadth-first so branches share iteration budget
-	var rng := RandomNumberGenerator.new()
-	rng.randomize()
-	var vine_length_total = clamp(rng.randi_range(vine_length_min, vine_length_max), 1, 10000)
-	if DEBUG_PRINTS:
-		print("[vines] vine_length_total=", vine_length_total)
+	# Iterate to find next points with direction continuity
+	var preferred_surface_dir: Vector3 = Vector3.ZERO
+	for iteration in range(1, vine_iterations):
+		# Compute preferred direction from last two points if available
+		if points_and_normals.size() >= 2:
+			var p_prev: Vector3 = points_and_normals[-1]["point"]
+			var p_prev_prev: Vector3 = points_and_normals[-2]["point"]
+			var trend: Vector3 = (p_prev - p_prev_prev).normalized()
+			# Project trend onto surface plane (perpendicular to normal)
+			preferred_surface_dir = (trend - trend.dot(current_normal) * current_normal).normalized()
 
-	var current_tips: Array = []
-	# track index = number of main nodes from origin (0 = origin)
-	current_tips.append({"point": current_point, "normal": current_normal, "preferred_surface_dir": Vector3.ZERO, "index": 0})
-	for depth in range(1, vine_length_total):
-		var next_tips: Array = []
-		for tip in current_tips:
-			var tip_point: Vector3 = tip["point"]
-			var tip_normal: Vector3 = tip["normal"]
-			var pref_dir: Vector3 = tip["preferred_surface_dir"]
-			var tip_index: int = int(tip["index"])
-			# if this tip has exhausted its budget from origin, skip
-			if tip_index >= vine_length_total - 1:
-				continue
+		var next_result = _compute_next_point_internal(current_point, current_normal, preferred_surface_dir)
+		if next_result == null:
+			if DEBUG_PRINTS:
+				print("[vines] iteration ", iteration, " computation failed")
+			break
 
-			var next_result = _compute_next_point_internal(tip_point, tip_normal, pref_dir)
-			if next_result == null:
-				continue
-
-			var new_point: Vector3 = next_result["point"]
-			var new_normal: Vector3 = (next_result["normal"] as Vector3).normalized()
-
-			# If normal changed, show debug ray spheres for every tested segment and refine
-			var d := tip_normal.dot(new_normal)
-			if d < 0.9999 and next_result.has("debug_segments"):
+		# Compare normals to previous; if different, draw spheres along all ray segments that were tested for this point
+		var prev_normal := current_normal
+		var new_normal := (next_result["normal"] as Vector3).normalized()
+		if prev_normal != null and next_result.has("debug_segments"):
+			var d := prev_normal.dot(new_normal)
+			if d < 0.9999:
+				# Spawn spheres for each tested ray segment
 				for seg in next_result["debug_segments"]:
 					_spawn_toruses_along_segment(seg["start"], seg["end"], 6, Color.CYAN, 0.6)
 
-				# Refinement sampling along the debug polyline -> target straight line between tip and new_point
+				# Refinement: sample N points along the concatenated debug ray polyline,
+				# raycast from each sample toward the corresponding point along the cube path
 				var refinement_count := 10
+				# build segment lengths
 				var segs = next_result["debug_segments"]
 				var seg_lengths := []
 				var total_len := 0.0
@@ -483,110 +426,37 @@ func refresh_vines():
 				if total_len > 0.0:
 					for k in range(1, refinement_count + 1):
 						var frac := float(k) / float(refinement_count + 1)
+						# find position along polyline at frac
 						var dist_along := total_len * frac
 						var accum := 0.0
-						var source_pos := (segs[-1]["end"] as Vector3)
+						var source_pos = segs[-1]["end"]
 						for idx in range(segs.size()):
 							if accum + seg_lengths[idx] >= dist_along:
-								var local_t = (dist_along - accum) / max(1e-8, seg_lengths[idx])
+								var local_t = (dist_along - accum) / seg_lengths[idx]
 								source_pos = (segs[idx]["start"] as Vector3).lerp(segs[idx]["end"] as Vector3, local_t)
 								break
 							accum += seg_lengths[idx]
-						var target_pos := tip_point.lerp(new_point, frac)
-						var dir_vec := (target_pos - source_pos)
+						# corresponding target along straight line between prev and new point
+						var target_pos := (current_point as Vector3).lerp(next_result["point"] as Vector3, frac)
+						var dir_vec = (target_pos - source_pos)
 						if dir_vec.length_squared() < 1e-8:
 							continue
-						var ray_len := dir_vec.length() * refinement_ray_overreach
-						var ray_hit := _raycast_for_next(source_pos, dir_vec, ray_len)
+						var ray_hit := _raycast_for_next(source_pos, dir_vec, dir_vec.length() + 0.01)
 						if not ray_hit.is_empty():
-							# enforce max points total
-							if points_and_normals.size() >= max_points_total:
-								if DEBUG_PRINTS:
-									print("[vines] reached max_points_total; stopping refinement")
-									break
 							points_and_normals.append({"point": ray_hit["position"], "normal": ray_hit["normal"]})
 
-			# Append the new point only if under global cap
-			if points_and_normals.size() < max_points_total:
-				points_and_normals.append({"point": new_point, "normal": new_normal})
-			else:
-				if DEBUG_PRINTS:
-					print("[vines] reached max_points_total; stopping growth")
-				# end generation early by clearing next_tips so outer loop finishes
-				next_tips.clear()
-
-			# Prepare next tip (main continuation) with incremented index
-			var trend: Vector3 = (new_point - tip_point).normalized()
-			var next_pref: Vector3 = (trend - trend.dot(new_normal) * new_normal)
-			if next_pref.length_squared() < 1e-6:
-				next_pref = Vector3.ZERO
-			else:
-				next_pref = next_pref.normalized()
-			var new_index := tip_index + 1
-			if new_index < vine_length_total:
-				next_tips.append({"point": new_point, "normal": new_normal, "preferred_surface_dir": next_pref, "index": new_index})
-
-			# Branching: chance to add an extra tip that uses same build logic
-			var rng2 := RandomNumberGenerator.new()
-			rng2.randomize()
-			if rng2.randf() < branch_chance:
-				var branch_dir := _random_in_plane_direction(new_normal)
-				# branch starts at new_point with same new_index budget
-				if new_index < vine_length_total:
-					next_tips.append({"point": new_point, "normal": new_normal, "preferred_surface_dir": branch_dir, "index": new_index})
-					# Debug: spawn a small sphere and a purple cube at the branch point
-					var branch_sphere := CSGSphere3D.new()
-					branch_sphere.name = "BranchDebugSphere_%d" % depth
-					branch_sphere.radius = max(0.005, debug_sphere_radius * 1.2)
-					branch_sphere.use_collision = false
-					branch_sphere.material = StandardMaterial3D.new()
-					branch_sphere.material.albedo_color = Color(0.8, 0.2, 0.9)
-					if _debug_spawn_count < max_debug_nodes:
-						add_child(branch_sphere)
-						_debug_spawn_count += 1
-						_spawn_this_tick += 1
-						if enable_yielding and _spawn_this_tick >= per_tick_spawn_limit:
-							_spawn_this_tick = 0
-							await get_tree().process_frame
-					else:
-						if DEBUG_PRINTS:
-							print("[vines] reached max_debug_nodes; skipping branch sphere")
-					branch_sphere.global_transform = Transform3D(Basis(), new_point)
-
-					var cube_size = max(0.01, debug_sphere_radius * 1.5)
-					var box_mesh := BoxMesh.new()
-					box_mesh.size = Vector3(cube_size, cube_size, cube_size)
-					var cube_mi := MeshInstance3D.new()
-					cube_mi.name = "BranchDebugCube_%d" % depth
-					cube_mi.mesh = box_mesh
-					cube_mi.material_override = StandardMaterial3D.new()
-					cube_mi.material_override.albedo_color = Color(0.6, 0.1, 0.7)
-					if _debug_spawn_count < max_debug_nodes:
-						add_child(cube_mi)
-						_debug_spawn_count += 1
-						_spawn_this_tick += 1
-						if enable_yielding and _spawn_this_tick >= per_tick_spawn_limit:
-							_spawn_this_tick = 0
-							await get_tree().process_frame
-					else:
-						if DEBUG_PRINTS:
-							print("[vines] reached max_debug_nodes; skipping branch cube")
-					cube_mi.global_transform = Transform3D(Basis(), new_point)
-
-		# Move to the next generation of tips
-		current_tips = next_tips
+		current_point = next_result["point"]
+		current_normal = new_normal
+		points_and_normals.append({"point": current_point, "normal": current_normal})
 
 	if DEBUG_PRINTS:
-		print("[vines] found ", points_and_normals.size(), " points (including refinements)")
+		print("[vines] found ", points_and_normals.size(), " points")
 
 	# Offset points outward by vine_radius along their normals
 	var offset_points: Array = []
 	for entry in points_and_normals:
 		var offset_pt: Vector3 = entry["point"] + entry["normal"] * vine_radius
 		offset_points.append(offset_pt)
-
-	# Build Catmull-Rom curve
-	var curve_points := _build_catmull_rom_curve(offset_points)
 
 	# Spawn debug shapes for each point with decreasing size
 	for i in range(points_and_normals.size()):
