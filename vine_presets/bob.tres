@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="VinesPresetResource" format=3 uid="uid://c3d0f55abpjei"]
+
+[ext_resource type="Script" uid="uid://bys8so6ietxq7" path="res://vines_preset_resource.gd" id="1_8jq64"]
+
+[resource]
+script = ExtResource("1_8jq64")
+vine_length_min = 10
+vine_length_max = 20
+branch_vine_length_min = 6
+branch_vine_length_max = 10
+branch_spawn_min = 2
+branch_spawn_max = 5
+initial_seed = 6

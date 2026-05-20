@@ -1,7 +1,18 @@
 @tool
 extends Node3D
 
+const VINES_PRESET_SCRIPT := preload("res://vines_preset_resource.gd")
+
 @export_tool_button("Redraw", "Node3D") var redraw_tool_button = refresh_vines
+
+@export_category("Preset Setup")
+@export_group("Save")
+@export var preset_name: String ##Filename used when saving presets into res://vine_presets.
+@export var initial_seed: int = 1 ##Base seed used to make every generated result deterministic.
+@export_tool_button("Save", "Node3D") var save_preset_tool_button = save_current_preset
+@export_group("Load")
+@export var preset_file_path: String = "" ##Choose a saved preset from the dropdown list.
+@export_tool_button("Load", "Node3D") var load_preset_tool_button = load_current_preset
 
 @export_category("Origin Calculation")
 @export var origin_raycast_distance := 2.0 ##Radius in Meters of zone checked to find the closest surface point for the origin.
@@ -30,6 +41,151 @@ const QUERY_COLLISION_MASK := 1
 const COLLIDE_WITH_BODIES := true
 const COLLIDE_WITH_AREAS := false
 const DEBUG_PRINTS := true
+const PRESET_FOLDER := "res://vine_presets"
+
+var _seed_cursor: int = 0
+var _preset_picker_labels: PackedStringArray = PackedStringArray(["<None>"])
+var _preset_picker_paths: PackedStringArray = PackedStringArray([""])
+
+func _ready() -> void:
+	refresh_preset_picker()
+
+func _validate_property(property: Dictionary) -> void:
+	if property.name == "preset_file_path":
+		property.hint = PROPERTY_HINT_ENUM
+		property.hint_string = ",".join(_preset_picker_labels)
+
+func refresh_preset_picker() -> void:
+	var labels: PackedStringArray = PackedStringArray(["<None>"])
+	var paths: PackedStringArray = PackedStringArray([""])
+
+	var dir := DirAccess.open(PRESET_FOLDER)
+	if dir != null:
+		dir.list_dir_begin()
+		while true:
+			var file_name := dir.get_next()
+			if file_name.is_empty():
+				break
+			if dir.current_is_dir():
+				continue
+			var ext := file_name.get_extension().to_lower()
+			if ext == "tres" or ext == "res":
+				labels.append(file_name)
+				paths.append(PRESET_FOLDER.path_join(file_name))
+		dir.list_dir_end()
+
+	_preset_picker_labels = labels
+	_preset_picker_paths = paths
+
+	if preset_file_path.is_empty() or not _preset_picker_paths.has(preset_file_path):
+		preset_file_path = _preset_picker_paths[0]
+
+	notify_property_list_changed()
+
+func _reset_seed_cursor() -> void:
+	_seed_cursor = 0
+
+func _next_seed() -> int:
+	var seed_value := initial_seed + _seed_cursor
+	_seed_cursor += 1
+	return seed_value
+
+func _new_deterministic_rng() -> RandomNumberGenerator:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = _next_seed()
+	return rng
+
+func _capture_preset() -> Resource:
+	var preset := VINES_PRESET_SCRIPT.new()
+	preset.origin_raycast_distance = origin_raycast_distance
+	preset.refinement_passes = refinement_passes
+	preset.refinement_rays_per_pass = refinement_rays_per_pass
+	preset.step_length = step_length
+	preset.vine_length_min = vine_length_min
+	preset.vine_length_max = vine_length_max
+	preset.vine_radius = vine_radius
+	preset.vine_count = vine_count
+	preset.surface_direction_variation_angle = surface_direction_variation_angle
+	preset.branch_step_length = branch_step_length
+	preset.branch_vine_length_min = branch_vine_length_min
+	preset.branch_vine_length_max = branch_vine_length_max
+	preset.branch_vine_radius = branch_vine_radius
+	preset.branch_surface_direction_variation_angle = branch_surface_direction_variation_angle
+	preset.branch_spawn_min = branch_spawn_min
+	preset.branch_spawn_max = branch_spawn_max
+	preset.initial_seed = initial_seed
+	return preset
+
+func _ensure_preset_folder_exists() -> void:
+	if not DirAccess.dir_exists_absolute(ProjectSettings.globalize_path(PRESET_FOLDER)):
+		var err := DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(PRESET_FOLDER))
+		if err != OK:
+			push_warning("[vines] Failed to create preset folder %s (error %s)" % [PRESET_FOLDER, err])
+
+func _get_save_preset_path() -> String:
+	var file_name := preset_name.strip_edges()
+	if file_name.is_empty():
+		file_name = "vine_preset"
+	if not file_name.ends_with(".tres") and not file_name.ends_with(".res"):
+		file_name += ".tres"
+	return PRESET_FOLDER.path_join(file_name)
+
+func _apply_preset(preset: Resource) -> void:
+	if preset == null:
+		return
+	if not preset.has_method("get"):
+		return
+	origin_raycast_distance = preset.origin_raycast_distance
+	refinement_passes = preset.refinement_passes
+	refinement_rays_per_pass = preset.refinement_rays_per_pass
+	step_length = preset.step_length
+	vine_length_min = preset.vine_length_min
+	vine_length_max = preset.vine_length_max
+	vine_radius = preset.vine_radius
+	vine_count = preset.vine_count
+	surface_direction_variation_angle = preset.surface_direction_variation_angle
+	branch_step_length = preset.branch_step_length
+	branch_vine_length_min = preset.branch_vine_length_min
+	branch_vine_length_max = preset.branch_vine_length_max
+	branch_vine_radius = preset.branch_vine_radius
+	branch_surface_direction_variation_angle = preset.branch_surface_direction_variation_angle
+	branch_spawn_min = preset.branch_spawn_min
+	branch_spawn_max = preset.branch_spawn_max
+	initial_seed = preset.initial_seed
+
+func save_current_preset() -> void:
+
+	_ensure_preset_folder_exists()
+	var save_path := _get_save_preset_path()
+
+	var preset := _capture_preset()
+	var err := ResourceSaver.save(preset, save_path)
+	if err != OK:
+		push_warning("[vines] Failed to save preset to %s (error %s)" % [save_path, err])
+		return
+
+	refresh_preset_picker()
+	print("[vines] preset saved to ", save_path)
+
+func load_current_preset() -> void:
+	if preset_file_path.is_empty():
+		push_warning("[vines] Choose a preset from the dropdown before loading.")
+		return
+
+	var load_path := preset_file_path
+
+	var loaded := ResourceLoader.load(load_path)
+	if loaded == null:
+		push_warning("[vines] Failed to load preset from %s" % load_path)
+		return
+	if not (loaded is VINES_PRESET_SCRIPT):
+		push_warning("[vines] The selected file is not a VinesPresetResource: %s" % load_path)
+		return
+
+	_apply_preset(loaded)
+	refresh_preset_picker()
+	print("[vines] preset loaded from ", load_path)
+	refresh_vines()
 
 func _find_closest_surface_hit(global_point: Vector3) -> Dictionary:
 	var query_origin := global_point
@@ -211,8 +367,7 @@ func _build_catmull_rom_curve(points: Array) -> Array:
 	return curve_points
 
 func _random_in_plane_direction(normal: Vector3) -> Vector3:
-	var rng := RandomNumberGenerator.new()
-	rng.randomize()
+	var rng := _new_deterministic_rng()
 	var angle := rng.randf_range(0.0, PI * 2.0)
 	var tangent := normal.cross(Vector3.UP)
 	if tangent.length_squared() < 1e-6:
@@ -245,8 +400,7 @@ func _compute_next_point_internal(surface_point: Vector3, surface_normal: Vector
 	var parallel_dir: Vector3
 	if preferred_surface_dir.length_squared() > 0.0001:
 		# Bias toward preferred direction with variation
-		var rng := RandomNumberGenerator.new()
-		rng.randomize()
+		var rng := _new_deterministic_rng()
 		var variation_rad := deg_to_rad(surface_direction_variation_angle)
 		if use_variation_angle >= 0.0:
 			variation_rad = deg_to_rad(use_variation_angle)
@@ -306,6 +460,7 @@ func _compute_next_point_internal(surface_point: Vector3, surface_normal: Vector
 
 func refresh_vines() -> void:
 	_clear_debug_shapes()
+	_reset_seed_cursor()
 	var origin := global_position
 	var point_result = get_closest_surface_point(origin)
 	var normal_result = get_closest_surface_normal(origin)
@@ -317,8 +472,6 @@ func refresh_vines() -> void:
 	var initial_normal: Vector3 = (normal_result as Vector3).normalized()
 
 	# Generate multiple main vines from the same starting point in different directions
-	var rng := RandomNumberGenerator.new()
-	rng.randomize()
 	for vine_idx in range(vine_count):
 		var initial_dir: Vector3 = Vector3.ZERO
 		if vine_idx > 0:
@@ -326,6 +479,7 @@ func refresh_vines() -> void:
 			initial_dir = _random_in_plane_direction(initial_normal)
 
 		# Determine randomized main vine length
+		var rng := _new_deterministic_rng()
 		var main_len := rng.randi_range(vine_length_min, vine_length_max)
 		var settings := {
 			"step_length": step_length,
@@ -345,11 +499,13 @@ func refresh_vines() -> void:
 				print("[vines] vine ", vine_idx, " mesh added to scene")
 
 			# Spawn random secondary branches along the smoothed main curve
-			var spawn_count := rng.randi_range(branch_spawn_min, branch_spawn_max)
+			var spawn_count_rng := _new_deterministic_rng()
+			var spawn_count := spawn_count_rng.randi_range(branch_spawn_min, branch_spawn_max)
 			for b_i in range(spawn_count):
 				if vine_res["curve_points"].size() < 2:
 					continue
-				var t_norm := rng.randf()
+				var branch_sample_rng := _new_deterministic_rng()
+				var t_norm := branch_sample_rng.randf()
 				t_norm = clamp(t_norm, 0.0, 1.0)
 				var seg_f := t_norm * float(vine_res["curve_points"].size() - 1)
 				var idx := int(floor(seg_f))
@@ -372,7 +528,8 @@ func refresh_vines() -> void:
 					tangent = (vine_res["curve_points"][t_i1] - vine_res["curve_points"][t_i0]).normalized()
 				var branch_initial_dir := (tangent - tangent.dot(spawn_normal) * spawn_normal).normalized()
 
-				var branch_len := rng.randi_range(branch_vine_length_min, branch_vine_length_max)
+				var branch_len_rng := _new_deterministic_rng()
+				var branch_len := branch_len_rng.randi_range(branch_vine_length_min, branch_vine_length_max)
 				var branch_settings := {
 					"step_length": branch_step_length,
 					"vine_length": branch_len,
@@ -527,8 +684,7 @@ func _build_tube_surface_placements(curve_points: Array, radius: float, density:
 	if density <= 0.0:
 		return placements
 
-	var rng := RandomNumberGenerator.new()
-	rng.randomize()
+	var rng := _new_deterministic_rng()
 
 	# Density is interpreted as a normalized fraction of curve samples.
 	var sample_count := int(round(float(curve_points.size()) * clamp(density, 0.0, 1.0)))
@@ -574,8 +730,7 @@ func _build_tube_surface_placements(curve_points: Array, radius: float, density:
 
 
 func _generate_single_vine(initial_point: Vector3, initial_normal: Vector3, initial_dir: Vector3, settings: Dictionary = {}) -> Dictionary:
-	var rng := RandomNumberGenerator.new()
-	rng.randomize()
+	var rng := _new_deterministic_rng()
 
 	var points_and_normals: Array = []
 	var current_point: Vector3 = initial_point
@@ -591,7 +746,7 @@ func _generate_single_vine(initial_point: Vector3, initial_normal: Vector3, init
 	points_and_normals.append({"point": current_point, "normal": current_normal})
 
 	# Iterate to find next points with direction continuity
-	var preferred_surface_dir: Vector3 = Vector3.ZERO
+	var preferred_surface_dir: Vector3 = initial_dir.normalized() if initial_dir.length_squared() > 0.0001 else Vector3.ZERO
 	for iteration in range(1, local_vine_length):
 		# Compute preferred direction from last two points if available
 		if points_and_normals.size() >= 2:
