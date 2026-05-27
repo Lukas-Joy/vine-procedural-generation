@@ -7,6 +7,7 @@
 [ext_resource type="Script" uid="uid://b0tkw84qyo5mc" path="res://vinesV4.gd" id="5_ykrsh"]
 [ext_resource type="PackedScene" uid="uid://c86px6yluuq3p" path="res://player/player.tscn" id="6_g14j6"]
 [ext_resource type="Script" uid="uid://bawbo55sja2dt" path="res://vinesV5.gd" id="6_vbegm"]
+[ext_resource type="Script" uid="uid://n11nec8wpr53" path="res://vinesV6.gd" id="7_ehkex"]
 
 [sub_resource type="ArrayMesh" id="ArrayMesh_37kl0"]
 _surfaces = [{
@@ -178,13 +179,38 @@ branch_spawn_min = 2
 branch_spawn_max = 5
 
 [node name="VineGeneratorV5" type="Node3D" parent="." unique_id=2024413361]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.5517242, 4.2746606, -0.44911957)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.04719597, 4.38591, -0.5379114)
+visible = false
 script = ExtResource("6_vbegm")
-vine_length_min = 20
-vine_length_max = 20
-branch_spawn_max = 0
+vine_length_min = 30
+vine_length_max = 50
+vine_count = 4
+branch_vine_length_min = 7
+branch_vine_length_max = 12
+branch_spawn_min = 3
+branch_spawn_max = 5
+sagging_chance = 1.0
+sagging_length_factor_min = 0.5
+sagging_length_factor_max = 2.5
+
+[node name="VineGeneratorV6" type="Node3D" parent="." unique_id=1601095540]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.04719597, 4.38591, -0.5379114)
+script = ExtResource("7_ehkex")
+vine_length_min = 30
+vine_length_max = 50
+vine_count = 4
+branch_vine_length_min = 7
+branch_vine_length_max = 50
+branch_spawn_min = 3
+branch_spawn_max = 5
+sagging_chance = 1.0
+sagging_length_factor_min = 0.5
+sagging_length_factor_max = 2.5
+trailing_length_min = 0.1
+trailing_length_max = 3.0
 
 [node name="CharacterBody3D" parent="." unique_id=1215296793 instance=ExtResource("6_g14j6")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.4959227, 0, 0)
 
 [node name="World" type="Node3D" parent="." unique_id=4403964]
 

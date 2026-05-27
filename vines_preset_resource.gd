@@ -21,4 +21,13 @@ class_name VinesPresetResource
 @export var branch_spawn_min: int
 @export var branch_spawn_max: int
 
+@export var sagging_chance: float
+@export var sagging_length_factor_min: float
+@export var sagging_length_factor_max: float
+@export var trailing_chance: float
+@export var trailing_length_min: float
+@export var trailing_length_max: float
+@export var trailing_vine_radius: float
+@export var trailing_vine_jitter: float
+
 @export var initial_seed: int

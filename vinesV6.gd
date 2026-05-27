@@ -50,7 +50,8 @@ const VINES_PRESET_SCRIPT := preload("res://vines_preset_resource.gd")
 @export var trailing_chance := 0.3 ##Chance for each point on the main vine to spawn a trailing vine.
 @export var trailing_length_min := 0.75 ##Length minimum for trailing vines.
 @export var trailing_length_max := 1.25 ##Length maximum for trailing vines.
-
+@export var trailing_vine_radius := 0.008 ##Radius for trailing vines.
+@export var trailing_vine_jitter := 0.02 ##Max random offset applied to trailing vines to make them less uniform.
 
 const QUERY_COLLISION_MASK := 1
 const COLLIDE_WITH_BODIES := true
@@ -128,6 +129,14 @@ func _capture_preset() -> Resource:
 	preset.branch_surface_direction_variation_angle = branch_surface_direction_variation_angle
 	preset.branch_spawn_min = branch_spawn_min
 	preset.branch_spawn_max = branch_spawn_max
+	preset.sagging_chance = sagging_chance
+	preset.sagging_length_factor_min = sagging_length_factor_min
+	preset.sagging_length_factor_max = sagging_length_factor_max
+	preset.trailing_chance = trailing_chance
+	preset.trailing_length_min = trailing_length_min
+	preset.trailing_length_max = trailing_length_max
+	preset.trailing_vine_radius = trailing_vine_radius
+	preset.trailing_vine_jitter = trailing_vine_jitter
 	preset.initial_seed = initial_seed
 	return preset
 
@@ -166,6 +175,14 @@ func _apply_preset(preset: Resource) -> void:
 	branch_surface_direction_variation_angle = preset.branch_surface_direction_variation_angle
 	branch_spawn_min = preset.branch_spawn_min
 	branch_spawn_max = preset.branch_spawn_max
+	sagging_chance = preset.sagging_chance
+	sagging_length_factor_min = preset.sagging_length_factor_min
+	sagging_length_factor_max = preset.sagging_length_factor_max
+	trailing_chance = preset.trailing_chance
+	trailing_length_min = preset.trailing_length_min
+	trailing_length_max = preset.trailing_length_max
+	trailing_vine_radius = preset.trailing_vine_radius
+	trailing_vine_jitter = preset.trailing_vine_jitter
 	initial_seed = preset.initial_seed
 
 func save_current_preset() -> void:
@@ -338,6 +355,21 @@ func _clear_shapes() -> void:
 		child.queue_free()
 
 
+func _add_generated_meshes(result: Dictionary) -> void:
+	if result.has("mesh") and result["mesh"] != null:
+		var mi := MeshInstance3D.new()
+		mi.mesh = result["mesh"]
+		add_child(mi)
+
+	if result.has("trailing_meshes"):
+		for trailing_mesh in result["trailing_meshes"]:
+			if trailing_mesh == null:
+				continue
+			var trailing_instance := MeshInstance3D.new()
+			trailing_instance.mesh = trailing_mesh
+			add_child(trailing_instance)
+
+
 func _append_below_horizontal_group(groups: Array, group: Array) -> void:
 	if group.size() > 0:
 		groups.append(group)
@@ -353,6 +385,35 @@ func _raycast_downward_for_point(point: Vector3, ray_length: float) -> Vector3:
 	if ray_hit.is_empty():
 		return point + Vector3.DOWN * ray_length
 	return ray_hit["position"]
+
+
+func _build_straight_segment_mesh(start_point: Vector3, end_point: Vector3, radius: float) -> Mesh:
+	if start_point.distance_to(end_point) <= 0.000001:
+		return null
+	return _build_tubular_mesh(_build_catmull_rom_curve([start_point, end_point]), radius)
+
+
+func _build_jittered_trailing_curve(start_point: Vector3, end_point: Vector3, jitter_amount: float, rng: RandomNumberGenerator) -> Array:
+	var curve_points: Array = [start_point]
+	var distance := start_point.distance_to(end_point)
+	var segment_count = clamp(int(ceil(distance / max(trailing_vine_radius * 2.0, 0.08))), 2, 8)
+
+	for i in range(1, segment_count):
+		var t := float(i) / float(segment_count)
+		var point := start_point.lerp(end_point, t)
+		var horizontal_falloff := 4.0 * t * (1.0 - t)
+		var jitter_x := rng.randf_range(-jitter_amount, jitter_amount) * horizontal_falloff
+		var jitter_z := rng.randf_range(-jitter_amount, jitter_amount) * horizontal_falloff
+		curve_points.append(point + Vector3(jitter_x, 0.0, jitter_z))
+
+	curve_points.append(end_point)
+	return curve_points
+
+
+func _build_trailing_shaft_mesh(start_point: Vector3, end_point: Vector3, radius: float, jitter_amount: float) -> Mesh:
+	var rng := _new_deterministic_rng()
+	var curve_points := _build_jittered_trailing_curve(start_point, end_point, jitter_amount, rng)
+	return _build_tubular_mesh(_build_catmull_rom_curve(curve_points), radius)
 
 func _raycast_for_next(origin: Vector3, dir: Vector3, length: float) -> Dictionary:
 	var params := PhysicsRayQueryParameters3D.create(origin, origin + dir.normalized() * length, QUERY_COLLISION_MASK)
@@ -407,6 +468,55 @@ func _apply_sagging_to_points(points_and_normals: Array, local_vine_radius: floa
 			var ray_length = max(sag_offset, local_vine_radius * 0.5) + local_vine_radius + 0.01
 			var final_point := _raycast_downward_for_point(sagged_point, ray_length)
 			points_and_normals[abs_idx]["point"] = final_point
+
+
+func _collect_trailing_vine_meshes(points_and_normals: Array, local_vine_radius: float) -> Array:
+	var trailing_meshes: Array = []
+	if points_and_normals.is_empty() or trailing_chance <= 0.0:
+		return trailing_meshes
+
+	var rng := _new_deterministic_rng()
+
+	for entry in points_and_normals:
+		var normal := (entry["normal"] as Vector3).normalized()
+		if normal.dot(Vector3.UP) >= 0.0:
+			continue
+		if rng.randf() > trailing_chance:
+			continue
+
+		var trailing_length = max(rng.randf_range(trailing_length_min, trailing_length_max), local_vine_radius * 2.0)
+		var start_point := entry["point"] as Vector3
+		var down_hit := _raycast_for_next(start_point, Vector3.DOWN, trailing_length)
+
+		if down_hit.is_empty():
+			var end_point = start_point + Vector3.DOWN * trailing_length
+			var segment_mesh := _build_trailing_shaft_mesh(start_point, end_point, trailing_vine_radius, trailing_vine_jitter)
+			if segment_mesh != null:
+				trailing_meshes.append(segment_mesh)
+			continue
+
+		var hit_point := down_hit["position"] as Vector3
+		var shaft_mesh := _build_trailing_shaft_mesh(start_point, hit_point, trailing_vine_radius, trailing_vine_jitter)
+		if shaft_mesh != null:
+			trailing_meshes.append(shaft_mesh)
+
+		var short_growth_length := rng.randi_range(2, 4)
+		var wander_result := _generate_single_vine(
+			hit_point,
+			down_hit["normal"],
+			Vector3.ZERO,
+			{
+				"step_length": step_length,
+				"vine_length": short_growth_length,
+				"vine_radius": trailing_vine_radius,
+				"surface_direction_variation_angle": surface_direction_variation_angle,
+				"allow_trailing": false
+			}
+		)
+		if wander_result != null and wander_result.has("mesh") and wander_result["mesh"] != null:
+			trailing_meshes.append(wander_result["mesh"])
+
+	return trailing_meshes
 
 func _catmull_rom_point(p0: Vector3, p1: Vector3, p2: Vector3, p3: Vector3, t: float) -> Vector3:
 	var t2 := t * t
@@ -565,18 +675,15 @@ func refresh_vines() -> void:
 			"step_length": step_length,
 			"vine_length": main_len,
 			"vine_radius": vine_radius,
-			"surface_direction_variation_angle": surface_direction_variation_angle
+			"surface_direction_variation_angle": surface_direction_variation_angle,
+			"allow_trailing": true
 		}
 
 		var vine_res = _generate_single_vine(initial_point, initial_normal, initial_dir, settings)
 		if vine_res != null:
 			if DEBUG_PRINTS:
 				print("[vines] vine ", vine_idx, " mesh generated")
-			# If a mesh was produced, add it to the scene
-			if vine_res.has("mesh") and vine_res["mesh"] != null:
-				var mi := MeshInstance3D.new()
-				mi.mesh = vine_res["mesh"]
-				add_child(mi)
+			_add_generated_meshes(vine_res)
 
 			# Spawn random secondary branches along the smoothed main curve
 			var spawn_count_rng := _new_deterministic_rng()
@@ -614,15 +721,13 @@ func refresh_vines() -> void:
 					"step_length": branch_step_length,
 					"vine_length": branch_len,
 					"vine_radius": branch_vine_radius,
-					"surface_direction_variation_angle": branch_surface_direction_variation_angle
+					"surface_direction_variation_angle": branch_surface_direction_variation_angle,
+					"allow_trailing": false
 				}
 
 				var branch_res = _generate_single_vine(spawn_pos, spawn_normal, branch_initial_dir, branch_settings)
 				if branch_res != null:
-					if branch_res.has("mesh") and branch_res["mesh"] != null:
-						var bmi := MeshInstance3D.new()
-						bmi.mesh = branch_res["mesh"]
-						add_child(bmi)
+					_add_generated_meshes(branch_res)
 					if DEBUG_PRINTS:
 						print("[vines] branch ", b_i, " mesh generated")
 	
@@ -825,6 +930,7 @@ func _generate_single_vine(initial_point: Vector3, initial_normal: Vector3, init
 	var local_vine_length := int(settings["vine_length"]) if settings.has("vine_length") else rng.randi_range(vine_length_min, vine_length_max)
 	var local_vine_radius = settings["vine_radius"] if settings.has("vine_radius") else vine_radius
 	var local_variation = settings["surface_direction_variation_angle"] if settings.has("surface_direction_variation_angle") else surface_direction_variation_angle
+	var local_allow_trailing = settings["allow_trailing"] if settings.has("allow_trailing") else true
 
 	# Store first point and normal
 	points_and_normals.append({"point": current_point, "normal": current_normal})
@@ -904,6 +1010,10 @@ func _generate_single_vine(initial_point: Vector3, initial_normal: Vector3, init
 	# Apply sagging adjustments to points so mesh follows sagged positions
 	_apply_sagging_to_points(points_and_normals, local_vine_radius)
 
+	var trailing_meshes: Array = []
+	if local_allow_trailing:
+		trailing_meshes = _collect_trailing_vine_meshes(points_and_normals, local_vine_radius)
+
 	# Offset points outward by local_vine_radius along their normals
 	var offset_points: Array = []
 	for entry in points_and_normals:
@@ -916,5 +1026,5 @@ func _generate_single_vine(initial_point: Vector3, initial_normal: Vector3, init
 	# Build tubular mesh from the smoothed curve and return it (no debug markers)
 	var mesh := _build_tubular_mesh(curve_points, local_vine_radius)
 
-	return {"curve_points": curve_points, "points_and_normals": points_and_normals, "mesh": mesh}
+	return {"curve_points": curve_points, "points_and_normals": points_and_normals, "mesh": mesh, "trailing_meshes": trailing_meshes}
 	
