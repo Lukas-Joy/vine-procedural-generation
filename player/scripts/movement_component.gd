@@ -12,13 +12,11 @@ extends Node
 @export var forward_speed: float = 5.5
 @export var strafe_speed: float = 4.8
 @export var backward_speed: float = 4.0
-@export var sprint_speed_multiplier: float = 1.75  # Multiplies forward speed when sprinting
 
 # Momentum timings (in seconds)
 @export_subgroup("Momentum")
 @export var accel_time: float = 0.3
 @export var decel_time: float = 0.9
-@export var sprint_accel_time: float = 0.15  # Faster acceleration when sprinting
 
 # Physics
 @export_subgroup("Jump")
@@ -137,21 +135,14 @@ func _get_movement_speed(input_vector: Vector3) -> float:
 		base_speed = strafe_speed
 	else:  # Moving forward
 		base_speed = forward_speed
-	
-	# Apply sprint multiplier (only when moving forward and sprinting)
-	if input_handler.is_sprinting() and input_vector.z > 0:
-		base_speed *= sprint_speed_multiplier
+
 	
 	return base_speed
 
 
 func _update_momentum(delta: float, has_input: bool):
-	"""Update momentum progress (acceleration/deceleration) with delta-time scaling.
-	Uses fixed accel/decel times. Faster acceleration when sprinting.
-	"""
+
 	var current_accel_time = accel_time
-	if input_handler.is_sprinting():
-		current_accel_time = sprint_accel_time
 	
 	if has_input:
 		accel_progress = clamp(accel_progress + delta / current_accel_time, 0.0, 1.0)
@@ -191,8 +182,3 @@ func get_desired_speed() -> float:
 func is_moving() -> bool:
 	"""Check if player is currently moving"""
 	return get_current_horizontal_speed() > MIN_SPEED
-
-
-func is_sprinting() -> bool:
-	"""Check if player is currently sprinting"""
-	return input_handler.is_sprinting()

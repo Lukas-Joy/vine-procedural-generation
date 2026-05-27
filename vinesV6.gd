@@ -75,7 +75,8 @@ var _preset_picker_paths: PackedStringArray = PackedStringArray([""])
 
 func _ready() -> void:
 	refresh_preset_picker()
-
+	refresh_vines()
+	
 func _validate_property(property: Dictionary) -> void:
 	if property.name == "preset_file_path":
 		property.hint = PROPERTY_HINT_ENUM
@@ -483,6 +484,11 @@ func _build_trailing_shaft_mesh(start_point: Vector3, end_point: Vector3, radius
 	var curve_points := _build_jittered_trailing_curve(start_point, end_point, jitter_amount, rng)
 	return _build_tubular_mesh(_build_catmull_rom_curve(curve_points), radius)
 
+
+func _build_trailing_shaft_curve_points(start_point: Vector3, end_point: Vector3, jitter_amount: float) -> Array:
+	var rng := _new_deterministic_rng()
+	return _build_jittered_trailing_curve(start_point, end_point, jitter_amount, rng)
+
 func _raycast_for_next(origin: Vector3, dir: Vector3, length: float) -> Dictionary:
 	var params := PhysicsRayQueryParameters3D.create(origin, origin + dir.normalized() * length, QUERY_COLLISION_MASK)
 	params.collide_with_bodies = COLLIDE_WITH_BODIES
@@ -558,13 +564,21 @@ func _collect_trailing_vine_meshes(points_and_normals: Array, local_vine_radius:
 
 		if down_hit.is_empty():
 			var end_point = start_point + Vector3.DOWN * trailing_length
-			var segment_mesh := _build_trailing_shaft_mesh(start_point, end_point, trailing_vine_radius, trailing_vine_jitter)
+			var shaft_curve_points := _build_trailing_shaft_curve_points(start_point, end_point, trailing_vine_jitter)
+			if leaf_enabled and leaf_scene != null and leaf_density > 0.0:
+				var leaf_placements := _build_tube_surface_placements(shaft_curve_points, trailing_vine_radius, leaf_density)
+				_scatter_leaf_instances(leaf_placements)
+			var segment_mesh := _build_tubular_mesh(_build_catmull_rom_curve(shaft_curve_points), trailing_vine_radius)
 			if segment_mesh != null:
 				trailing_meshes.append(segment_mesh)
 			continue
 
 		var hit_point := down_hit["position"] as Vector3
-		var shaft_mesh := _build_trailing_shaft_mesh(start_point, hit_point, trailing_vine_radius, trailing_vine_jitter)
+		var shaft_curve_points := _build_trailing_shaft_curve_points(start_point, hit_point, trailing_vine_jitter)
+		if leaf_enabled and leaf_scene != null and leaf_density > 0.0:
+			var leaf_placements := _build_tube_surface_placements(shaft_curve_points, trailing_vine_radius, leaf_density)
+			_scatter_leaf_instances(leaf_placements)
+		var shaft_mesh := _build_tubular_mesh(_build_catmull_rom_curve(shaft_curve_points), trailing_vine_radius)
 		if shaft_mesh != null:
 			trailing_meshes.append(shaft_mesh)
 
@@ -1091,12 +1105,12 @@ func _generate_single_vine(initial_point: Vector3, initial_normal: Vector3, init
 	# Build Catmull-Rom curve (world-space)
 	var curve_points := _build_catmull_rom_curve(offset_points)
 
-	if leaf_scene != null and leaf_enabled and leaf_density > 0.0:
-		var leaf_placements := _build_tube_surface_placements(curve_points, local_vine_radius, leaf_density)
-		_scatter_leaf_instances(leaf_placements)
-
 	# Build tubular mesh from the smoothed curve and return it (no debug markers)
 	var mesh := _build_tubular_mesh(curve_points, local_vine_radius)
+
+	if leaf_enabled and leaf_scene != null and leaf_density > 0.0:
+		var leaf_placements := _build_tube_surface_placements(curve_points, local_vine_radius, leaf_density)
+		_scatter_leaf_instances(leaf_placements)
 
 	return {"curve_points": curve_points, "points_and_normals": points_and_normals, "mesh": mesh, "trailing_meshes": trailing_meshes}
 	
