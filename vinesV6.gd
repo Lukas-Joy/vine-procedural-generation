@@ -32,6 +32,16 @@ const VINES_PRESET_SCRIPT := preload("res://vines_preset_resource.gd")
 @export var debug_normal_radius := 0.01 ##Radius of the debug pointer drawn along each normal.
 @export_range(0.0, 1.0, 0.05) var debug_cascade_chance := 1 ##Chance that a below-horizontal group turns into a cascaded straight section.
 
+@export_category("Leaf Settings")
+@export var leaf_enabled := true ##Enable leaf scattering on the generated vine surface.
+@export var leaf_scene: PackedScene ##Scene instanced along the tube surface as leaves.
+@export_range(0.0, 1.0, 0.05) var leaf_density := 0.5 ##Density of leaf placements along the vine curve.
+@export_range(0.0, 180.0, 1.0) var leaf_angle_randomisation := 45.0 ##Random twist applied around the surface normal.
+
+@export_category("Branch Appearance")
+@export var branch_texture: Texture2D ##Optional texture applied to generated vine meshes.
+@export var branch_color: Color = Color(0.16, 0.31, 0.12, 1.0) ##Base color used for generated vine meshes.
+
 @export_group("Secondary Branches")
 @export var branch_step_length := 0.5 ##Step length for secondary branches
 @export_range(1, 50, 1) var branch_vine_length_min := 3 ##Min length for secondary branches
@@ -122,6 +132,12 @@ func _capture_preset() -> Resource:
 	preset.vine_radius = vine_radius
 	preset.vine_count = vine_count
 	preset.surface_direction_variation_angle = surface_direction_variation_angle
+	preset.leaf_enabled = leaf_enabled
+	preset.leaf_scene = leaf_scene
+	preset.leaf_density = leaf_density
+	preset.leaf_angle_randomisation = leaf_angle_randomisation
+	preset.branch_texture = branch_texture
+	preset.branch_color = branch_color
 	preset.branch_step_length = branch_step_length
 	preset.branch_vine_length_min = branch_vine_length_min
 	preset.branch_vine_length_max = branch_vine_length_max
@@ -168,6 +184,12 @@ func _apply_preset(preset: Resource) -> void:
 	vine_radius = preset.vine_radius
 	vine_count = preset.vine_count
 	surface_direction_variation_angle = preset.surface_direction_variation_angle
+	leaf_enabled = preset.leaf_enabled
+	leaf_scene = preset.leaf_scene
+	leaf_density = preset.leaf_density
+	leaf_angle_randomisation = preset.leaf_angle_randomisation
+	branch_texture = preset.branch_texture
+	branch_color = preset.branch_color
 	branch_step_length = preset.branch_step_length
 	branch_vine_length_min = preset.branch_vine_length_min
 	branch_vine_length_max = preset.branch_vine_length_max
@@ -359,6 +381,7 @@ func _add_generated_meshes(result: Dictionary) -> void:
 	if result.has("mesh") and result["mesh"] != null:
 		var mi := MeshInstance3D.new()
 		mi.mesh = result["mesh"]
+		_apply_branch_material(mi)
 		add_child(mi)
 
 	if result.has("trailing_meshes"):
@@ -367,7 +390,52 @@ func _add_generated_meshes(result: Dictionary) -> void:
 				continue
 			var trailing_instance := MeshInstance3D.new()
 			trailing_instance.mesh = trailing_mesh
+			_apply_branch_material(trailing_instance)
 			add_child(trailing_instance)
+
+
+func _apply_branch_material(mesh_instance: MeshInstance3D) -> void:
+	if mesh_instance == null:
+		return
+	var material := StandardMaterial3D.new()
+	material.albedo_color = branch_color
+	if branch_texture != null:
+		material.albedo_texture = branch_texture
+	mesh_instance.material_override = material
+
+
+func _scatter_leaf_instances(placements: Array) -> void:
+	if not leaf_enabled or leaf_scene == null or placements.is_empty() or leaf_density <= 0.0:
+		return
+
+	var rng := _new_deterministic_rng()
+	for placement in placements:
+		var leaf_instance := leaf_scene.instantiate()
+		if not (leaf_instance is Node3D):
+			if leaf_instance != null and leaf_instance is Node:
+				leaf_instance.queue_free()
+			continue
+
+		var world_pos: Vector3 = placement["point"]
+		var outward: Vector3 = (placement["outward"] as Vector3).normalized()
+		var tangent: Vector3 = (placement["tangent"] as Vector3).normalized()
+		var local_pos := to_local(world_pos)
+
+		var up := outward
+		var right := tangent.cross(up)
+		if right.length_squared() < 1e-6:
+			right = up.cross(Vector3.UP)
+			if right.length_squared() < 1e-6:
+				right = up.cross(Vector3.RIGHT)
+		right = right.normalized()
+		var forward := right.cross(up).normalized()
+		var basis := Basis(right, up, forward)
+
+		var twist := deg_to_rad(rng.randf_range(-leaf_angle_randomisation, leaf_angle_randomisation))
+		basis = Basis(Quaternion(up, twist)) * basis
+
+		(leaf_instance as Node3D).transform = Transform3D(basis, local_pos)
+		add_child(leaf_instance)
 
 
 func _append_below_horizontal_group(groups: Array, group: Array) -> void:
@@ -1022,6 +1090,10 @@ func _generate_single_vine(initial_point: Vector3, initial_normal: Vector3, init
 
 	# Build Catmull-Rom curve (world-space)
 	var curve_points := _build_catmull_rom_curve(offset_points)
+
+	if leaf_scene != null and leaf_enabled and leaf_density > 0.0:
+		var leaf_placements := _build_tube_surface_placements(curve_points, local_vine_radius, leaf_density)
+		_scatter_leaf_instances(leaf_placements)
 
 	# Build tubular mesh from the smoothed curve and return it (no debug markers)
 	var mesh := _build_tubular_mesh(curve_points, local_vine_radius)

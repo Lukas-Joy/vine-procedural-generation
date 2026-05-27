@@ -13,6 +13,11 @@ class_name VinesPresetResource
 @export var vine_count: int
 @export var surface_direction_variation_angle: float
 
+@export var leaf_enabled: bool = true
+@export var leaf_scene: PackedScene
+@export var leaf_density: float = 0.5
+@export var leaf_angle_randomisation: float = 45.0
+
 @export var branch_step_length: float
 @export var branch_vine_length_min: int 
 @export var branch_vine_length_max: int
@@ -20,6 +25,8 @@ class_name VinesPresetResource
 @export var branch_surface_direction_variation_angle: float
 @export var branch_spawn_min: int
 @export var branch_spawn_max: int
+@export var branch_texture: Texture2D
+@export var branch_color: Color = Color(0.16, 0.31, 0.12, 1.0)
 
 @export var sagging_chance: float
 @export var sagging_length_factor_min: float
