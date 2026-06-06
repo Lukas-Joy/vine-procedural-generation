@@ -1,12 +1,7 @@
 [gd_scene format=4 uid="uid://w87tfvfrnhm6"]
 
-[ext_resource type="Script" uid="uid://crh3jffsv2yir" path="res://vines.gd" id="1"]
 [ext_resource type="PackedScene" uid="uid://brylinoxmjbaq" path="res://leaf.tscn" id="2_8uh7m"]
-[ext_resource type="Script" uid="uid://cj774uu7tad1c" path="res://vinesV2.gd" id="3_6uqi0"]
-[ext_resource type="Script" uid="uid://bti6yo1td4krh" path="res://vinesV3.gd" id="4_ppyta"]
-[ext_resource type="Script" uid="uid://b0tkw84qyo5mc" path="res://vinesV4.gd" id="5_ykrsh"]
 [ext_resource type="PackedScene" uid="uid://c86px6yluuq3p" path="res://player/player.tscn" id="6_g14j6"]
-[ext_resource type="Script" uid="uid://bawbo55sja2dt" path="res://vinesV5.gd" id="6_vbegm"]
 [ext_resource type="Script" uid="uid://n11nec8wpr53" path="res://vinesV6.gd" id="7_ehkex"]
 
 [sub_resource type="ArrayMesh" id="ArrayMesh_37kl0"]
@@ -83,14 +78,12 @@ data = PackedVector3Array(-1.1304102, -0.25515565, -9.88236e-08, -1.0076545, -0.
 sky_top_color = Color(0.12357441, 0.4690665, 0.72284895, 1)
 sky_horizon_color = Color(0.43170598, 0.66191465, 0.7714436, 1)
 
-[sub_resource type="Sky" id="Sky_g14j6"]
+[sub_resource type="Sky" id="Sky_ehkex"]
 sky_material = SubResource("ProceduralSkyMaterial_g14j6")
 
 [sub_resource type="Environment" id="Environment_g14j6"]
 background_mode = 2
-sky = SubResource("Sky_g14j6")
-fog_enabled = true
-volumetric_fog_enabled = true
+sky = SubResource("Sky_ehkex")
 
 [node name="Root" type="Node3D" unique_id=2119549164]
 
@@ -142,78 +135,8 @@ mesh = SubResource("ArrayMesh_xersf")
 transform = Transform3D(1, 0, 0, 1.7763568e-15, 0.9999999, 0, 0, 0, 0.9999999, 0, 0, 0)
 shape = SubResource("ConcavePolygonShape3D_00tp4")
 
-[node name="VineGenerator" type="Node3D" parent="." unique_id=1945434608]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.5, 2, 2)
-visible = false
-script = ExtResource("1")
-vine_iterations = 10
-vine_count = 1
-vine_radius = 0.01
-surface_direction_variation_angle = 100.0
-leaf_scene = ExtResource("2_8uh7m")
-leaf_density = 1.0
-
-[node name="VineGeneratorV2" type="Node3D" parent="." unique_id=1973063508]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.10932028, 2.3806486, -0.568701)
-visible = false
-script = ExtResource("3_6uqi0")
-vine_iterations = 10
-
-[node name="VineGeneratorV3" type="Node3D" parent="." unique_id=1790450211]
-transform = Transform3D(1.0000322, 0, 0, 0, 1.0000331, 0, 0, 0, 1.0000335, 2.0881832, 1.7979205, -1.9046607)
-visible = false
-script = ExtResource("4_ppyta")
-origin_raycast_distance = 25.0
-vine_count = 10
-surface_direction_variation_angle = 100.0
-leaf_scene = ExtResource("2_8uh7m")
-leaf_density = 0.1
-
-[node name="VineGeneratorV4" type="Node3D" parent="." unique_id=268062564]
-transform = Transform3D(1.0000322, 0, 0, 0, 1.0000331, 0, 0, 0, 1.0000335, 2.771152, 1.7511804, -1.7695353)
-visible = false
-script = ExtResource("5_ykrsh")
-branch_vine_length_min = 6
-branch_vine_length_max = 10
-branch_spawn_min = 2
-branch_spawn_max = 5
-
-[node name="VineGeneratorV5" type="Node3D" parent="." unique_id=2024413361]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.04719597, 4.38591, -0.5379114)
-visible = false
-script = ExtResource("6_vbegm")
-vine_length_min = 30
-vine_length_max = 50
-vine_count = 4
-branch_vine_length_min = 7
-branch_vine_length_max = 12
-branch_spawn_min = 3
-branch_spawn_max = 5
-sagging_chance = 1.0
-sagging_length_factor_min = 0.5
-sagging_length_factor_max = 2.5
-
 [node name="VineGeneratorV6_1" type="Node3D" parent="." unique_id=1601095540]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.04719597, 4.38591, -0.5379114)
-script = ExtResource("7_ehkex")
-vine_length_min = 30
-vine_length_max = 50
-vine_count = 4
-leaf_scene = ExtResource("2_8uh7m")
-leaf_density = 1.0
-branch_color = Color(7.2196127e-07, 0.4493385, 4.813075e-07, 1)
-branch_vine_length_min = 7
-branch_vine_length_max = 50
-branch_spawn_min = 3
-branch_spawn_max = 5
-sagging_chance = 1.0
-sagging_length_factor_min = 0.5
-sagging_length_factor_max = 2.5
-trailing_length_min = 0.1
-trailing_length_max = 3.0
-
-[node name="VineGeneratorV6_2" type="Node3D" parent="." unique_id=8169947]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4.885031, 1.415843, -0.5379114)
 script = ExtResource("7_ehkex")
 vine_length_min = 30
 vine_length_max = 50

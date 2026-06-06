@@ -15,6 +15,7 @@ script = ExtResource("1_oul6g")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.8, 0)
 
 [node name="Camera3D" type="Camera3D" parent="Head" unique_id=155189754]
+fov = 100.0
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=534034846]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0)
@@ -30,6 +31,9 @@ script = ExtResource("4_physics")
 script = ExtResource("5_movement")
 character_body = NodePath("..")
 input_handler = NodePath("../InputHandlerComponent")
+forward_speed = 2.75
+strafe_speed = 2.4
+backward_speed = 2.0
 
 [node name="CameraComponent" type="Node" parent="." unique_id=1965495482 node_paths=PackedStringArray("character_body", "head")]
 script = ExtResource("6_camera")

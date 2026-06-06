@@ -40,7 +40,7 @@ const VINES_PRESET_SCRIPT := preload("res://vines_preset_resource.gd")
 
 @export_category("Branch Appearance")
 @export var branch_texture: Texture2D ##Optional texture applied to generated vine meshes.
-@export var branch_color: Color = Color(0.16, 0.31, 0.12, 1.0) ##Base color used for generated vine meshes.
+@export var branch_color: Color = Color("32534aff") ##Base color used for generated vine meshes.
 
 @export_group("Secondary Branches")
 @export var branch_step_length := 0.5 ##Step length for secondary branches
@@ -75,7 +75,6 @@ var _preset_picker_paths: PackedStringArray = PackedStringArray([""])
 
 func _ready() -> void:
 	refresh_preset_picker()
-	refresh_vines()
 	
 func _validate_property(property: Dictionary) -> void:
 	if property.name == "preset_file_path":
@@ -372,18 +371,21 @@ func get_closest_surface_normal(global_point: Vector3) -> Variant:
 	return hit["normal"]
 
 func _clear_shapes() -> void:
-	# Remove all children of this node so debug geometry never lingers.
 	for child in get_children():
-		# queue_free each direct child
-		child.queue_free()
+		if Engine.is_editor_hint():
+			child.free()   # immediate in editor, so the tree is clean before re-adding
+		else:
+			child.queue_free()
 
 
 func _add_generated_meshes(result: Dictionary) -> void:
 	if result.has("mesh") and result["mesh"] != null:
 		var mi := MeshInstance3D.new()
 		mi.mesh = result["mesh"]
+		mi.name = "VineMesh"
 		_apply_branch_material(mi)
 		add_child(mi)
+		mi.owner = get_tree().edited_scene_root  # ← this is the key line
 
 	if result.has("trailing_meshes"):
 		for trailing_mesh in result["trailing_meshes"]:
@@ -391,8 +393,10 @@ func _add_generated_meshes(result: Dictionary) -> void:
 				continue
 			var trailing_instance := MeshInstance3D.new()
 			trailing_instance.mesh = trailing_mesh
+			trailing_instance.name = "VineTrailingMesh"
 			_apply_branch_material(trailing_instance)
 			add_child(trailing_instance)
+			trailing_instance.owner = get_tree().edited_scene_root  # ← same here
 
 
 func _apply_branch_material(mesh_instance: MeshInstance3D) -> void:
@@ -437,7 +441,7 @@ func _scatter_leaf_instances(placements: Array) -> void:
 
 		(leaf_instance as Node3D).transform = Transform3D(basis, local_pos)
 		add_child(leaf_instance)
-
+		leaf_instance.owner = get_tree().edited_scene_root  # ← add after every add_child
 
 func _append_below_horizontal_group(groups: Array, group: Array) -> void:
 	if group.size() > 0:

@@ -1,0 +1,14 @@
+[gd_resource type="PlaneMesh" format=3 uid="uid://brq8v2s3jhp38"]
+
+[ext_resource type="Texture2D" uid="uid://cdhvnpcputdp1" path="res://leaf.png" id="1_q8p7c"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_qihfy"]
+transparency = 1
+cull_mode = 2
+albedo_texture = ExtResource("1_q8p7c")
+
+[resource]
+material = SubResource("StandardMaterial3D_qihfy")
+size = Vector2(0.1, 0.1)
+subdivide_width = 1
+subdivide_depth = 1

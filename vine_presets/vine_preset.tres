@@ -1,23 +1,33 @@
 [gd_resource type="Resource" script_class="VinesPresetResource" format=3 uid="uid://cev6t6hukp4w8"]
 
-[ext_resource type="Script" uid="uid://bys8so6ietxq7" path="res://vines_preset_resource.gd" id="1_ur2qg"]
+[ext_resource type="PackedScene" uid="uid://brylinoxmjbaq" path="res://leaf.tscn" id="1_mlpn5"]
+[ext_resource type="Script" uid="uid://bys8so6ietxq7" path="res://vines_preset_resource.gd" id="2_holdn"]
 
 [resource]
-script = ExtResource("1_ur2qg")
+script = ExtResource("2_holdn")
 origin_raycast_distance = 2.0
 refinement_passes = 2
 refinement_rays_per_pass = 18
 step_length = 0.5
-vine_length_min = 20
-vine_length_max = 20
+vine_length_min = 14
+vine_length_max = 30
 vine_radius = 0.01
-vine_count = 1
+vine_count = 3
 surface_direction_variation_angle = 45.0
+leaf_scene = ExtResource("1_mlpn5")
 branch_step_length = 0.5
-branch_vine_length_min = 7
-branch_vine_length_max = 12
+branch_vine_length_min = 9
+branch_vine_length_max = 16
 branch_vine_radius = 0.008
 branch_surface_direction_variation_angle = 30.0
-branch_spawn_min = 3
-branch_spawn_max = 5
-initial_seed = 8
+branch_spawn_max = 3
+branch_color = Color(0.19607843, 0.3254902, 0.2901961, 1)
+sagging_chance = 0.3
+sagging_length_factor_min = 0.75
+sagging_length_factor_max = 1.25
+trailing_chance = 0.3
+trailing_length_min = 0.75
+trailing_length_max = 1.25
+trailing_vine_radius = 0.008
+trailing_vine_jitter = 0.02
+initial_seed = 1

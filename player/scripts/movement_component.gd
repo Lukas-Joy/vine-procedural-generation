@@ -16,7 +16,7 @@ extends Node
 # Momentum timings (in seconds)
 @export_subgroup("Momentum")
 @export var accel_time: float = 0.3
-@export var decel_time: float = 0.9
+@export var decel_time: float = 10
 
 # Physics
 @export_subgroup("Jump")

@@ -1,0 +1,7 @@
+[gd_resource type="StandardMaterial3D" format=3 uid="uid://nu01wh6uoj8b"]
+
+[ext_resource type="Texture2D" uid="uid://csubnmd8dtcgr" path="res://TEXTURES/ConcGround.png" id="1_3ad5y"]
+
+[resource]
+albedo_texture = ExtResource("1_3ad5y")
+uv1_triplanar = true

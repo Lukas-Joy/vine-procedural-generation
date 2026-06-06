@@ -1,18 +1,9 @@
 [gd_scene format=3 uid="uid://brylinoxmjbaq"]
 
-[ext_resource type="Texture2D" uid="uid://cdhvnpcputdp1" path="res://leaf.png" id="1_p3lty"]
-
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_qihfy"]
-transparency = 1
-cull_mode = 2
-albedo_texture = ExtResource("1_p3lty")
-
-[sub_resource type="PlaneMesh" id="PlaneMesh_jiete"]
-material = SubResource("StandardMaterial3D_qihfy")
-size = Vector2(0.1, 0.1)
+[ext_resource type="PlaneMesh" uid="uid://brq8v2s3jhp38" path="res://Leaf.tres" id="1_p3lty"]
 
 [node name="Leaf" type="Node3D" unique_id=784899219]
 
 [node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=1624549467]
 transform = Transform3D(0.7071067, 3.0908613e-08, 0.7071068, 0.7071068, -3.090862e-08, -0.7071067, 2.1175824e-22, 1, -4.3711385e-08, 0, 0.06580752, 0)
-mesh = SubResource("PlaneMesh_jiete")
+mesh = ExtResource("1_p3lty")
