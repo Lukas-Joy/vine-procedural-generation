@@ -4,6 +4,9 @@
 [ext_resource type="Script" uid="uid://b6kf18rhbmf8f" path="res://player/scripts/physics_component.gd" id="4_physics"]
 [ext_resource type="Script" uid="uid://dnndgl0f87ou2" path="res://player/scripts/movement_component.gd" id="5_movement"]
 [ext_resource type="Script" uid="uid://darlge483vw3o" path="res://player/scripts/camera_component.gd" id="6_camera"]
+[ext_resource type="Script" uid="uid://c8dt5osnt42kd" path="res://player/scripts/zoom_component.gd" id="6_g6k8r"]
+[ext_resource type="Script" uid="uid://d0oionu30w1ja" path="res://player/scripts/news_ticker_banner.gd" id="7_boad6"]
+[ext_resource type="Script" uid="uid://v2kraqi84l10" path="res://player/scripts/level_component.gd" id="7_rgyib"]
 [ext_resource type="Script" uid="uid://bdqtok74l78d8" path="res://player/scripts/input_handler_component.gd" id="9_input"]
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_sh265"]
@@ -39,3 +42,33 @@ backward_speed = 2.0
 script = ExtResource("6_camera")
 character_body = NodePath("..")
 head = NodePath("../Head")
+
+[node name="ZoomComponent" type="Node" parent="." unique_id=1940532283 node_paths=PackedStringArray("camera", "input_handler")]
+script = ExtResource("6_g6k8r")
+camera = NodePath("../Head/Camera3D")
+input_handler = NodePath("../InputHandlerComponent")
+
+[node name="LevelComponent" type="Node" parent="." unique_id=957560724 node_paths=PackedStringArray("input_handler")]
+script = ExtResource("7_rgyib")
+input_handler = NodePath("../InputHandlerComponent")
+
+[node name="NewsTickerBanner" type="Control" parent="." unique_id=470080508]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("7_boad6")
+
+[node name="LabelContainer" type="Control" parent="NewsTickerBanner" unique_id=363734445]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+grow_horizontal = 2
+
+[node name="TickerLabel" type="Label" parent="NewsTickerBanner/LabelContainer" unique_id=548865863]
+layout_mode = 0
+offset_right = 40.0
+offset_bottom = 23.0
+text = "WASD"

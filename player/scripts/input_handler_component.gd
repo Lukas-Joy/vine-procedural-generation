@@ -5,79 +5,82 @@ extends Node
 signal movement_input_changed(input_vector: Vector3)
 signal jump_pressed
 signal jump_released
+signal zoom_in_pressed
+signal zoom_out_pressed
+signal zoom_reset_pressed
+signal level_reset_pressed
+signal level_exit_pressed
 
 # State
 var _movement_input: Vector3 = Vector3.ZERO
-var _jump_pressed_this_frame: bool = false
-var _jump_released_this_frame: bool = false
-
-# Frame tracking to ensure single-frame events
-var _was_jump_pressed: bool = false
 
 # Sprint tracking (for double-tap detection and state)
 var _was_move_forward_pressed: bool = false
 var _move_forward_last_tap_time: float = 0.0
 
 func _ready():
-	# Initialize input state at start of game
 	_update_movement_input()
 
 func _input(event: InputEvent):
-	# Handle raw input events here if needed
 	pass
 
 func _physics_process(delta: float):
-	# Update movement input
 	_update_movement_input()
-	
-	# Update jump input
 	_update_jump_input()
-
+	_update_zoom_input()
+	_update_level_input()
 
 func _update_movement_input():
-	"""Read movement input and emit signal if changed"""
 	var input_vec = Input.get_vector("move_left", "move_right", "move_backward", "move_forward")
 	var new_movement = Vector3(input_vec.x, 0, input_vec.y)
-	
 	if new_movement != _movement_input:
 		_movement_input = new_movement
 		movement_input_changed.emit(_movement_input)
 
-
 func _update_jump_input():
-	"""Handle jump input with single-frame press/release detection"""
-	var is_jump_pressed = Input.is_action_pressed("jump")
-	
-	# Detect press (transition from not pressed to pressed)
-	_jump_pressed_this_frame = is_jump_pressed and not _was_jump_pressed
-	
-	# Detect release (transition from pressed to not pressed)
-	_jump_released_this_frame = not is_jump_pressed and _was_jump_pressed
-	
-	if _jump_pressed_this_frame:
+	if Input.is_action_just_pressed("jump"):
 		jump_pressed.emit()
-	
-	if _jump_released_this_frame:
+	if Input.is_action_just_released("jump"):
 		jump_released.emit()
-	
-	_was_jump_pressed = is_jump_pressed
 
+func _update_zoom_input():
+	if Input.is_action_just_pressed("zoom_in"):
+		zoom_in_pressed.emit()
+	if Input.is_action_just_pressed("zoom_out"):
+		zoom_out_pressed.emit()
+	if Input.is_action_just_pressed("zoom_reset"):
+		zoom_reset_pressed.emit()
+
+func _update_level_input():
+	if Input.is_action_just_pressed("level_exit"):
+		level_exit_pressed.emit()
+	if Input.is_action_just_pressed("level_reset"):
+		level_reset_pressed.emit()
+		
 # Getter methods for external systems to query current input state
 func get_movement_input() -> Vector3:
-	"""Get current movement input vector"""
 	return _movement_input
 
-
 func is_moving() -> bool:
-	"""Check if there's any movement input"""
 	return _movement_input.length() > 0
 
-
 func is_jump_pressed() -> bool:
-	"""Check if jump was pressed this frame"""
-	return _jump_pressed_this_frame
-
+	return Input.is_action_just_pressed("jump")
 
 func is_jump_held() -> bool:
-	"""Check if jump is currently held"""
-	return _was_jump_pressed
+	return Input.is_action_pressed("jump")
+
+func is_zoom_in_pressed() -> bool:
+	return Input.is_action_just_pressed("zoom_in")
+
+func is_zoom_out_pressed() -> bool:
+	return Input.is_action_just_pressed("zoom_out")
+
+func is_zoom_reset_pressed() -> bool:
+	return Input.is_action_just_pressed("zoom_reset")
+
+func is_level_exit_pressed() -> bool:
+	return Input.is_action_just_pressed("level_exit")
+
+func is_level_reset_pressed() -> bool:
+	return Input.is_action_just_pressed("level_reset")

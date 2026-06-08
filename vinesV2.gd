@@ -197,6 +197,90 @@ func _build_catmull_rom_curve(points: Array) -> Array:
 
 	return curve_points
 
+func _build_tubular_mesh(curve_points: Array, radius: float) -> Mesh:
+	if curve_points.size() < 2:
+		return null
+
+	var vertices: PackedVector3Array = []
+	var indices: PackedInt32Array = []
+	var normals: PackedVector3Array = []
+
+	var circle_segments := 16
+	var radius_vec := radius
+
+	for i in range(curve_points.size()):
+		var pt = curve_points[i]
+		var tangent: Vector3
+
+		if i == 0:
+			tangent = (curve_points[1] - curve_points[0]).normalized()
+		elif i == curve_points.size() - 1:
+			tangent = (curve_points[i] - curve_points[i - 1]).normalized()
+		else:
+			tangent = (curve_points[i + 1] - curve_points[i - 1]).normalized()
+
+		var up := Vector3.UP
+		if abs(tangent.dot(up)) > 0.9:
+			up = Vector3.RIGHT
+
+		var right := tangent.cross(up).normalized()
+		var forward := tangent.cross(right).normalized()
+
+		for j in range(circle_segments):
+			var angle := (float(j) / float(circle_segments)) * TAU
+			var offset := right * cos(angle) * radius_vec + forward * sin(angle) * radius_vec
+			vertices.append(pt + offset)
+			normals.append(offset.normalized())
+
+	# Cap at start
+	var center_start := vertices[0]
+	vertices.append(center_start)
+	var center_start_idx := vertices.size() - 1
+
+	for j in range(circle_segments):
+		var j_next := (j + 1) % circle_segments
+		indices.append(center_start_idx)
+		indices.append(j)
+		indices.append(j_next)
+
+	# Build tube indices
+	for i in range(curve_points.size() - 1):
+		var base := i * circle_segments
+		var next_base := (i + 1) * circle_segments
+
+		for j in range(circle_segments):
+			var j_next := (j + 1) % circle_segments
+
+			indices.append(base + j)
+			indices.append(next_base + j)
+			indices.append(base + j_next)
+
+			indices.append(next_base + j)
+			indices.append(next_base + j_next)
+			indices.append(base + j_next)
+
+	# Cap at end
+	var last_ring_start := (curve_points.size() - 1) * circle_segments
+	var center_end := vertices[last_ring_start]
+	vertices.append(center_end)
+	var center_end_idx := vertices.size() - 1
+
+	for j in range(circle_segments):
+		var j_next := (j + 1) % circle_segments
+		indices.append(center_end_idx)
+		indices.append(last_ring_start + j_next)
+		indices.append(last_ring_start + j)
+
+	var mesh := ArrayMesh.new()
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = vertices
+	arrays[Mesh.ARRAY_NORMAL] = normals
+	arrays[Mesh.ARRAY_INDEX] = indices
+
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	return mesh
+
 func _random_in_plane_direction(normal: Vector3) -> Vector3:
 	var rng := RandomNumberGenerator.new()
 	rng.randomize()
@@ -207,44 +291,16 @@ func _random_in_plane_direction(normal: Vector3) -> Vector3:
 	tangent = tangent.normalized()
 	return tangent.rotated(normal, angle).normalized()
 
-func _spawn_toruses_along_segment(start: Vector3, end: Vector3, count: int = 8, color: Color = Color.CYAN, size_scale: float = 1.0) -> void:
-	# Spawn a line of small spheres between start and end for visualizing raycasts
-	if count <= 0:
-		return
-	var seg_dir := (end - start)
-	var length := seg_dir.length()
-	if length <= 0.0:
-		return
-	for i in range(1, count + 1):
-		var t := float(i) / float(count + 1)
-		var pos := start.lerp(end, t)
-		var sph := CSGSphere3D.new()
-		sph.name = "DebugRaySphere_%d" % i
-		sph.radius = max(0.01, length * 0.02) * size_scale
-		sph.use_collision = false
-		sph.material = StandardMaterial3D.new()
-		sph.material.albedo_color = color
-		add_child(sph)
-		sph.global_transform = Transform3D(Basis(), pos)
-
 func _compute_next_point_internal(surface_point: Vector3, surface_normal: Vector3, preferred_surface_dir: Vector3 = Vector3.ZERO) -> Variant:
 	var x := debug_normal_length
 	var half_x := x * 0.5
-	var debug_segments: Array = []
-
 	# 1) Raycast up from surface point in normal direction length x/2
-	var start1 := surface_point
-	var end1 := surface_point + surface_normal * half_x
-	var hit = _raycast_for_next(start1, surface_normal, half_x)
-	var seg_end1 := end1
+	var hit = _raycast_for_next(surface_point, surface_normal, half_x)
 	if not hit.is_empty():
-		seg_end1 = hit["position"]
-	debug_segments.append({"start": start1, "end": seg_end1})
-	if not hit.is_empty():
-		return {"point": hit["position"], "normal": hit["normal"], "debug_segments": debug_segments}
+		return {"point": hit["position"], "normal": hit["normal"]}
 
 	# base origin is end of the first ray
-	var base := end1
+	var base := surface_point + surface_normal * half_x
 
 	# 2) random parallel direction in surface plane, ray length x
 	var parallel_dir: Vector3
@@ -258,76 +314,38 @@ func _compute_next_point_internal(surface_point: Vector3, surface_normal: Vector
 	else:
 		parallel_dir = _random_in_plane_direction(surface_normal)
 
-	var start2 := base
-	var end2 := base + parallel_dir * x
-	hit = _raycast_for_next(start2, parallel_dir, x)
-	var seg_end2 := end2
+	hit = _raycast_for_next(base, parallel_dir, x)
 	if not hit.is_empty():
-		seg_end2 = hit["position"]
-	debug_segments.append({"start": start2, "end": seg_end2})
-	if not hit.is_empty():
-		return {"point": hit["position"], "normal": hit["normal"], "debug_segments": debug_segments}
+		return {"point": hit["position"], "normal": hit["normal"]}
 
 	# 3) raycast length x from end in negative normal direction
-	var base2 := end2
-	var start3 := base2
-	var end3 := base2 + (-surface_normal) * x
-	hit = _raycast_for_next(start3, -surface_normal, x)
-	var seg_end3 := end3
+	var base2 := base + parallel_dir * x
+	hit = _raycast_for_next(base2, -surface_normal, x)
 	if not hit.is_empty():
-		seg_end3 = hit["position"]
-	debug_segments.append({"start": start3, "end": seg_end3})
-	if not hit.is_empty():
-		return {"point": hit["position"], "normal": hit["normal"], "debug_segments": debug_segments}
+		return {"point": hit["position"], "normal": hit["normal"]}
 
 	# 4) raycast length x from end in negative parallel direction
-	var base3 := end3
-	var start4 := base3
-	var end4 := base3 + (-parallel_dir) * x
-	hit = _raycast_for_next(start4, -parallel_dir, x)
-	var seg_end4 := end4
+	var base3 := base2 + (-surface_normal) * x
+	hit = _raycast_for_next(base3, -parallel_dir, x)
 	if not hit.is_empty():
-		seg_end4 = hit["position"]
-	debug_segments.append({"start": start4, "end": seg_end4})
-	if not hit.is_empty():
-		return {"point": hit["position"], "normal": hit["normal"], "debug_segments": debug_segments}
+		return {"point": hit["position"], "normal": hit["normal"]}
 
 	# 5) final raycast from end in normal direction (should hit)
-	var base4 := end4
-	var start5 := base4
-	var end5 := base4 + surface_normal * x
-	hit = _raycast_for_next(start5, surface_normal, x)
-	var seg_end5 := end5
+	var base4 := base3 + (-parallel_dir) * x
+	hit = _raycast_for_next(base4, surface_normal, x)
 	if not hit.is_empty():
-		seg_end5 = hit["position"]
-	debug_segments.append({"start": start5, "end": seg_end5})
-	if not hit.is_empty():
-		return {"point": hit["position"], "normal": hit["normal"], "debug_segments": debug_segments}
+		return {"point": hit["position"], "normal": hit["normal"]}
 
 	# error, return null
 	return null
 
-func _spawn_debug_shapes(point: Vector3, normal: Vector3, iteration: int, size_scale: float, prev_normal = null, prev_point = null) -> void:
-	var color := Color.RED
-	if prev_normal != null:
-		var d = (normal.normalized()).dot((prev_normal as Vector3).normalized())
-		if DEBUG_PRINTS:
-			print("[vines] _spawn_debug_shapes: iteration=", iteration, " dot=", d)
-		# If normals differ significantly (dot < 0.9999) mark green.
-		# Use raw dot so opposite normals (dot ~= -1) are considered different.
-		if d < 0.9999:
-			color = Color.GREEN
-			if DEBUG_PRINTS:
-				print("[vines] normals differ -> GREEN")
-		elif DEBUG_PRINTS:
-			print("[vines] normals similar -> RED")
-
+func _spawn_debug_shapes(point: Vector3, normal: Vector3, iteration: int, size_scale: float) -> void:
 	var sphere := CSGSphere3D.new()
 	sphere.name = "DebugPointSphere_%d" % iteration
 	sphere.radius = debug_sphere_radius * size_scale
 	sphere.use_collision = false
 	sphere.material = StandardMaterial3D.new()
-	sphere.material.albedo_color = color
+	sphere.material.albedo_color = Color.RED
 	add_child(sphere)
 	sphere.global_transform = Transform3D(Basis(), point)
 
@@ -338,7 +356,7 @@ func _spawn_debug_shapes(point: Vector3, normal: Vector3, iteration: int, size_s
 	cylinder.height = debug_normal_length * size_scale
 	cylinder.use_collision = false
 	cylinder.material = StandardMaterial3D.new()
-	cylinder.material.albedo_color = color
+	cylinder.material.albedo_color = Color.RED
 
 	# Position cylinder so bottom is at point, top extends in normal direction
 	var cyl_center := point + normal * (debug_normal_length * size_scale * 0.5)
@@ -348,26 +366,8 @@ func _spawn_debug_shapes(point: Vector3, normal: Vector3, iteration: int, size_s
 		right = up.cross(Vector3.RIGHT)
 	right = right.normalized()
 	var forward := right.cross(up).normalized()
-	var debug_segments: Array = []
 	add_child(cylinder)
 	cylinder.global_transform = Transform3D(Basis(right, up, forward), cyl_center)
-
-	# If normals differ (we colored green) and we have a previous point, spawn a line of small cubes
-	if prev_point != null and color == Color.GREEN:
-		var cube_count := 10
-		var cube_size := debug_sphere_radius * 0.5 * size_scale
-		for j in range(1, cube_count + 1):
-			var t := float(j) / float(cube_count + 1)
-			var pos := (prev_point as Vector3).lerp(point, t)
-			var box_mesh := BoxMesh.new()
-			box_mesh.size = Vector3(cube_size, cube_size, cube_size)
-			var mi := MeshInstance3D.new()
-			mi.name = "DebugCube_%d_%d" % [iteration, j]
-			mi.mesh = box_mesh
-			mi.material_override = StandardMaterial3D.new()
-			mi.material_override.albedo_color = color
-			add_child(mi)
-			mi.global_transform = Transform3D(Basis(), pos)
 
 func refresh_vines():
 	_clear_debug_shapes()
@@ -402,51 +402,8 @@ func refresh_vines():
 				print("[vines] iteration ", iteration, " computation failed")
 			break
 
-		# Compare normals to previous; if different, draw spheres along all ray segments that were tested for this point
-		var prev_normal := current_normal
-		var new_normal := (next_result["normal"] as Vector3).normalized()
-		if prev_normal != null and next_result.has("debug_segments"):
-			var d := prev_normal.dot(new_normal)
-			if d < 0.9999:
-				# Spawn spheres for each tested ray segment
-				for seg in next_result["debug_segments"]:
-					_spawn_toruses_along_segment(seg["start"], seg["end"], 6, Color.CYAN, 0.6)
-
-				# Refinement: sample N points along the concatenated debug ray polyline,
-				# raycast from each sample toward the corresponding point along the cube path
-				var refinement_count := 10
-				# build segment lengths
-				var segs = next_result["debug_segments"]
-				var seg_lengths := []
-				var total_len := 0.0
-				for s in segs:
-					var l := (s["start"] as Vector3).distance_to(s["end"])
-					seg_lengths.append(l)
-					total_len += l
-				if total_len > 0.0:
-					for k in range(1, refinement_count + 1):
-						var frac := float(k) / float(refinement_count + 1)
-						# find position along polyline at frac
-						var dist_along := total_len * frac
-						var accum := 0.0
-						var source_pos = segs[-1]["end"]
-						for idx in range(segs.size()):
-							if accum + seg_lengths[idx] >= dist_along:
-								var local_t = (dist_along - accum) / seg_lengths[idx]
-								source_pos = (segs[idx]["start"] as Vector3).lerp(segs[idx]["end"] as Vector3, local_t)
-								break
-							accum += seg_lengths[idx]
-						# corresponding target along straight line between prev and new point
-						var target_pos := (current_point as Vector3).lerp(next_result["point"] as Vector3, frac)
-						var dir_vec = (target_pos - source_pos)
-						if dir_vec.length_squared() < 1e-8:
-							continue
-						var ray_hit := _raycast_for_next(source_pos, dir_vec, dir_vec.length() + 0.01)
-						if not ray_hit.is_empty():
-							points_and_normals.append({"point": ray_hit["position"], "normal": ray_hit["normal"]})
-
 		current_point = next_result["point"]
-		current_normal = new_normal
+		current_normal = (next_result["normal"] as Vector3).normalized()
 		points_and_normals.append({"point": current_point, "normal": current_normal})
 
 	if DEBUG_PRINTS:
@@ -458,14 +415,21 @@ func refresh_vines():
 		var offset_pt: Vector3 = entry["point"] + entry["normal"] * vine_radius
 		offset_points.append(offset_pt)
 
+	# Build Catmull-Rom curve
+	var curve_points := _build_catmull_rom_curve(offset_points)
+
+	# Build tubular mesh
+	var vine_mesh := _build_tubular_mesh(curve_points, vine_radius)
+	if vine_mesh != null:
+		var mesh_instance := MeshInstance3D.new()
+		mesh_instance.mesh = vine_mesh
+		mesh_instance.material_override = StandardMaterial3D.new()
+		mesh_instance.material_override.albedo_color = Color.GREEN
+		add_child(mesh_instance)
+
 	# Spawn debug shapes for each point with decreasing size
 	for i in range(points_and_normals.size()):
-		var size_scale := pow(0.9, float(i))
+		var size_scale := pow(0.5, float(i))
 		var entry = points_and_normals[i]
-		var prev_normal = null
-		var prev_point = null
-		if i > 0:
-			prev_normal = points_and_normals[i - 1]["normal"]
-			prev_point = points_and_normals[i - 1]["point"]
-		_spawn_debug_shapes(entry["point"], entry["normal"], i, size_scale, prev_normal, prev_point)
+		_spawn_debug_shapes(entry["point"], entry["normal"], i, size_scale)
 	
